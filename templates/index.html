@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demographic Dashboard — Serendipity Research</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+  <link rel="stylesheet" href="/static/css/dashboard.css?v=30">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════ TITLE BAR -->
+  <div class="title-bar">
+    <img class="title-bar-logo" src="/logo.png" alt="Serendipity Research"
+         onerror="this.style.display='none'">
+    <nav class="title-bar-nav">
+      <a href="#" class="active">Demographic Dashboard</a>
+    </nav>
+    <div class="title-bar-brand">v2026.4.0</div>
+  </div>
+
+  <!-- Accent line — never omit -->
+  <div id="accent-line"></div>
+
+  <!-- ═══════════════════════════════════════════════════════ MAIN LAYOUT -->
+  <div id="app">
+
+    <!-- ══════════════════════════════════════════════════════════ SIDEBAR -->
+    <aside id="sidebar">
+
+      <!-- Layer selector -->
+      <div class="sidebar-section">
+        <div class="section-header">CENSUS LAYER</div>
+        <div id="layer-pills" class="pill-group">
+          <button class="pill" data-layer="puma">PUMA</button>
+          <button class="pill active" data-layer="tract">TRACT</button>
+        </div>
+      </div>
+
+      <!-- Political / Administrative overlays -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          POLITICAL / ADMINISTRATIVE OVERLAYS
+          <span id="political-clear" class="action-link hidden">CLEAR</span>
+        </div>
+        <div id="political-pills" class="pill-group">
+          <button class="pill" data-political="cd119">US CONGRESS</button>
+          <button class="pill" data-political="sldl">TX HOUSE</button>
+          <button class="pill" data-political="sldu">TX SENATE</button>
+          <button class="pill" data-political="county">COUNTY</button>
+        </div>
+
+        <!-- Unified overlay search — shown when any overlay is active -->
+        <div id="overlay-search-wrap" class="hidden" style="margin-top:8px;position:relative;">
+          <input id="overlay-search" type="text" placeholder="SEARCH…" autocomplete="off">
+          <div id="overlay-dropdown" class="dropdown hidden"></div>
+          <div id="overlay-active-chip" class="hidden" style="margin-top:6px;">
+            <div class="filter-chip">
+              <div class="filter-chip-header">
+                <span class="filter-chip-label" id="overlay-active-name"></span>
+                <span class="filter-chip-remove" id="overlay-chip-remove" title="Clear selection">✕</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="political-legend" class="hidden" style="margin-top:8px;">
+          <div class="stats-grid">
+            <div class="stat-cell">
+              <div class="stat-label">ACTIVE OVERLAY</div>
+              <div class="stat-value" id="political-active-label" style="font-size:12px;">—</div>
+            </div>
+            <div class="stat-cell">
+              <div class="stat-label">FEATURES</div>
+              <div class="stat-value" id="political-district-count">—</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <div class="section-header" style="margin-bottom:6px;">
+              CHOROPLETH
+              <span id="district-choro-clear" class="action-link hidden">CLEAR</span>
+            </div>
+            <div class="dim-note" style="margin-bottom:6px;">Color overlay by display variable.</div>
+            <button class="action-btn" id="district-choro-toggle">▶ USE DISPLAY VARIABLE</button>
+          </div>
+          <div id="political-hover-info" class="dim-note" style="margin-top:8px;">
+            Hover a feature for its name. Click for demographic profile.
+          </div>
+        </div>
+      </div>
+
+
+
+      <!-- Choropleth selector -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          DISPLAY VARIABLE
+          <span id="choro-clear" class="action-link" title="Clear choropleth">✕</span>
+        </div>
+        <div id="field-search-wrap">
+          <input id="field-search" type="text" placeholder="SEARCH FIELDS…" autocomplete="off">
+        </div>
+        <div id="field-list-marketing" class="field-list">
+          <!-- populated by JS -->
+        </div>
+        <div id="extended-toggle-wrap">
+          <button id="extended-toggle" class="action-btn">▶ SHOW ALL FIELDS</button>
+        </div>
+        <div id="field-list-extended" class="field-list hidden">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- 2024 Election Results -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          2024 ELECTION RESULTS
+          <span id="election-clear" class="action-link hidden">CLEAR</span>
+        </div>
+        <div class="pill-group">
+          <button class="pill" id="election-toggle-btn">SHOW VTD LAYER</button>
+        </div>
+        <div id="election-controls" class="hidden" style="margin-top:8px;">
+          <div class="section-header" style="margin-bottom:6px;">DISPLAY FIELD</div>
+          <div id="election-field-search-wrap" style="position:relative;">
+            <input id="election-field-search" type="text" placeholder="SEARCH ELECTION FIELDS…" autocomplete="off">
+            <div id="election-field-dropdown" class="dropdown hidden"></div>
+          </div>
+          <div id="election-active-field" class="hidden" style="margin-top:6px;">
+            <div class="filter-chip">
+              <div class="filter-chip-header">
+                <span class="filter-chip-label" id="election-field-label"></span>
+                <span class="filter-chip-remove" id="election-field-clear">✕</span>
+              </div>
+            </div>
+          </div>
+          <div id="election-legend" class="hidden" style="margin-top:8px;">
+            <div id="election-legend-bar" style="height:6px;border-radius:2px;margin-bottom:4px;"></div>
+            <div class="legend-labels">
+              <span id="election-legend-low" style="font-size:9px;color:#444;font-variant-numeric:tabular-nums;">LOW</span>
+              <span id="election-legend-high" style="font-size:9px;color:#444;font-variant-numeric:tabular-nums;">HIGH</span>
+            </div>
+          </div>
+          <div id="election-hover-info" class="dim-note" style="margin-top:8px;">
+            Hover a VTD for results. Click for detail.
+          </div>
+        </div>
+      </div>
+
+      <!-- Election VTD detail panel -->
+      <div class="sidebar-section" id="election-detail-section" style="display:none;">
+        <div class="section-header">
+          VTD ELECTION RESULTS
+          <span id="election-detail-clear" class="action-link">✕</span>
+        </div>
+        <div id="election-detail-body"></div>
+      </div>
+
+      <!-- Percentile filters -->
+      <div class="sidebar-section">
+        <div class="section-header">
+          PERCENTILE FILTERS
+          <span class="badge" id="filter-count-badge">0</span>
+          <span id="filters-clear-all" class="action-link" title="Clear all filters">CLEAR</span>
+        </div>
+        <div id="filter-field-search-wrap">
+          <input id="filter-field-search" type="text" placeholder="SEARCH FIELD TO FILTER…" autocomplete="off">
+          <div id="filter-field-dropdown" class="dropdown hidden"></div>
+        </div>
+        <div id="active-filters">
+          <!-- chips rendered here -->
+        </div>
+        <div id="filter-note" class="dim-note">All filters combined with AND logic.</div>
+      </div>
+
+      <!-- Active selection detail -->
+      <div class="sidebar-section" id="selection-section" style="display:none;">
+        <div class="section-header">
+          SELECTED FEATURE
+          <span id="selection-clear" class="action-link">✕</span>
+        </div>
+        <div id="selection-detail">
+          <!-- marketing fields for selected feature -->
+        </div>
+        <button id="show-all-fields-btn" class="action-btn" style="margin-top:10px;">▶ ALL FIELDS</button>
+        <div id="all-fields-panel" class="hidden">
+          <!-- all fields for selected feature -->
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="sidebar-section">
+        <div class="section-header">EXPORT</div>
+        <div style="display:flex;gap:6px;">
+          <button class="action-btn" id="export-csv-btn">↓ CSV</button>
+          <button class="action-btn" id="export-xlsx-btn">↓ XLSX</button>
+        </div>
+        <div id="export-note" class="dim-note" style="margin-top:6px;">
+          Exports currently visible filtered data.
+        </div>
+      </div>
+
+      <!-- District detail panel -->
+      <div class="sidebar-section" id="district-section" style="display:none;">
+        <div class="section-header">
+          DISTRICT PROFILE
+          <span id="district-section-clear" class="action-link">✕</span>
+        </div>
+        <div id="district-detail"></div>
+        <button id="district-show-all-btn" class="action-btn" style="margin-top:10px;">▶ ALL FIELDS</button>
+        <div id="district-all-fields" class="hidden"></div>
+      </div>
+
+      <!-- Stats summary -->
+    </aside>
+
+    <!-- ════════════════════════════════════════════════════════ MAP AREA -->
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="map-loading" class="map-overlay-center hidden">
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <div id="loading-title">LOADING…</div>
+          <div id="startup-steps-list"></div>
+          <div id="loading-progress-wrap" class="hidden">
+            <div id="loading-progress-bar"></div>
+            <div id="loading-progress-pct">0%</div>
+          </div>
+        </div>
+      </div>
+      <div id="map-error" class="map-overlay hidden error-overlay">
+        <span id="map-error-msg">Error loading data.</span>
+      </div>
+      <!-- Floating status -->
+      <div id="status-pill" class="status-pill hidden">
+        <div class="spinner-sm"></div>
+        <span id="status-text">LOADING</span>
+      </div>
+
+      <!-- Hover tooltip -->
+      <div id="map-hover-tooltip" class="map-hover-tooltip hidden"></div>
+
+      <!-- Layer stats panel — bottom right of map -->
+      <div id="map-stats-panel" class="map-stats-panel hidden">
+        <div class="map-stats-header">
+          <span class="map-stats-title">LAYER STATS</span>
+          <span id="map-stats-close" class="action-link">✕</span>
+        </div>
+        <div class="map-stats-grid">
+          <div class="map-stat-cell">
+            <div class="map-stat-label">SHOWN</div>
+            <div class="map-stat-value" id="stat-count">—</div>
+          </div>
+          <div class="map-stat-cell">
+            <div class="map-stat-label">TOTAL</div>
+            <div class="map-stat-value" id="stat-total">—</div>
+          </div>
+        </div>
+        <div id="choro-stats" class="hidden">
+          <div class="map-stats-grid" style="margin-top:6px;">
+            <div class="map-stat-cell">
+              <div class="map-stat-label">MIN</div>
+              <div class="map-stat-value" id="stat-min">—</div>
+            </div>
+            <div class="map-stat-cell">
+              <div class="map-stat-label">MAX</div>
+              <div class="map-stat-value" id="stat-max">—</div>
+            </div>
+            <div class="map-stat-cell">
+              <div class="map-stat-label">MEDIAN</div>
+              <div class="map-stat-value" id="stat-med">—</div>
+            </div>
+            <div class="map-stat-cell">
+              <div class="map-stat-label">MEAN</div>
+              <div class="map-stat-value" id="stat-mean">—</div>
+            </div>
+          </div>
+          <div id="legend-wrap" style="margin-top:8px;">
+            <div class="map-stat-label" style="margin-bottom:4px;">COLOR SCALE</div>
+            <div id="legend-bar"></div>
+            <div id="legend-labels" class="legend-labels">
+              <span id="legend-low">LOW</span>
+              <span id="legend-high">HIGH</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /#app -->
+
+  <script src="/static/js/dashboard.js?v=30"></script>
+</body>
+</html>
