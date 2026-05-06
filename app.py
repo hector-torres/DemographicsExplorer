@@ -58,6 +58,53 @@ ELECTION_DIR  = os.path.join(ELECTION_BASE, "2024", "general")
 ELECTION_2020 = os.path.join(ELECTION_BASE, "2020", "general")
 ELECTION_2022 = os.path.join(ELECTION_BASE, "2022", "general")
 
+# LODES — Workplace Area Characteristics (jobs by census block → aggregated to tract)
+LODES_DIR = os.path.join(DATA_DIR, "census_bureau", "LODES")
+LODES_WAC = os.path.join(LODES_DIR, "tx_wac_S000_JT00_2023.csv")
+
+# LODES WAC field definitions (standard LEHD codes)
+LODES_FIELDS = {
+    # Total
+    "lodes_total_jobs":        ("C000",  "Total Jobs"),
+    # Age segments
+    "lodes_jobs_age_under29":  ("CA01",  "Jobs — Workers Under 29"),
+    "lodes_jobs_age_30to54":   ("CA02",  "Jobs — Workers Age 30–54"),
+    "lodes_jobs_age_55plus":   ("CA03",  "Jobs — Workers 55+"),
+    # Earnings
+    "lodes_jobs_low_wage":     ("CE01",  "Jobs — Low Wage (< $1,250/mo)"),
+    "lodes_jobs_mid_wage":     ("CE02",  "Jobs — Mid Wage ($1,250–$3,333/mo)"),
+    "lodes_jobs_high_wage":    ("CE03",  "Jobs — High Wage (> $3,333/mo)"),
+    # Industry (key NAICS sectors)
+    "lodes_jobs_agri":         ("CNS01", "Jobs — Agriculture & Mining"),
+    "lodes_jobs_construction": ("CNS04", "Jobs — Construction"),
+    "lodes_jobs_manufacturing":("CNS05", "Jobs — Manufacturing"),
+    "lodes_jobs_retail":       ("CNS07", "Jobs — Retail Trade"),
+    "lodes_jobs_transport":    ("CNS08", "Jobs — Transportation & Warehousing"),
+    "lodes_jobs_it":           ("CNS09", "Jobs — Information Technology"),
+    "lodes_jobs_finance":      ("CNS10", "Jobs — Finance & Insurance"),
+    "lodes_jobs_realestate":   ("CNS11", "Jobs — Real Estate"),
+    "lodes_jobs_professional": ("CNS12", "Jobs — Professional Services"),
+    "lodes_jobs_management":   ("CNS13", "Jobs — Management"),
+    "lodes_jobs_educ":         ("CNS15", "Jobs — Educational Services"),
+    "lodes_jobs_health":       ("CNS16", "Jobs — Health Care & Social Assist"),
+    "lodes_jobs_food":         ("CNS18", "Jobs — Food Service & Hospitality"),
+    "lodes_jobs_govt":         ("CNS20", "Jobs — Public Administration"),
+    # Education of workers
+    "lodes_workers_no_hs":     ("CD01",  "Workers — Less than High School"),
+    "lodes_workers_hs":        ("CD02",  "Workers — High School Diploma"),
+    "lodes_workers_some_college":("CD03","Workers — Some College"),
+    "lodes_workers_bachelors": ("CD04",  "Workers — Bachelor's+"),
+}
+
+# Derived LODES rates (computed after aggregation)
+LODES_DERIVED = {
+    "lodes_pct_high_wage":     "High Wage Jobs %",
+    "lodes_pct_low_wage":      "Low Wage Jobs %",
+    "lodes_pct_workers_ba":    "College-Educated Workers %",
+    "lodes_jobs_per_resident": "Jobs Per Resident",
+}
+_lodes_cache = {}   # "tract" → GeoDataFrame with LODES fields
+
 ELECTION_LAYERS = {
     "vtd": {
         "shp":   os.path.join(ELECTION_DIR, "vtds_24pg", "VTDs_24PG.shp"),
@@ -130,6 +177,25 @@ MARKETING_FIELDS = {
     "occ_mgmt_business":"Management / Business","occ_service":"Service Occupations",
     "occ_production":"Production / Manufacturing",
     "lang_english_only":"English Only","lang_spanish":"Spanish",
+    # LODES workforce
+    "lodes_total_jobs":        "Total Jobs (Workplace)",
+    "lodes_jobs_per_resident": "Jobs Per Resident",
+    "lodes_pct_high_wage":     "High Wage Jobs %",
+    "lodes_pct_low_wage":      "Low Wage Jobs %",
+    "lodes_pct_workers_ba":    "College-Educated Workers %",
+    "lodes_jobs_health":       "Health Care Jobs",
+    "lodes_jobs_professional": "Professional Services Jobs",
+    "lodes_jobs_retail":       "Retail Jobs",
+    "lodes_jobs_food":         "Food Service Jobs",
+    "lodes_jobs_educ":         "Education Jobs",
+    "lodes_jobs_finance":      "Finance & Insurance Jobs",
+    "lodes_jobs_govt":         "Government Jobs",
+    # Composite indices
+    "idx_economic_anxiety":    "Economic Anxiety Index",
+    "idx_latino_engagement":   "Latino Engagement Index",
+    "idx_working_class":       "Working Class Index",
+    "idx_professional_class":  "Professional Class Index",
+    "idx_senior_concentration":"Senior Concentration Index",
 }
 
 SUM_FIELDS = {
@@ -154,7 +220,127 @@ CHOROPLETH_SCALES = {
     "renter_occupied":["#2255cc","#cc2200"],"hispanic":["#1a1a3a","#7755cc"],
     "race_white":["#1a2a4a","#4477dd"],"race_black":["#1a2a1a","#44aa88"],
     "race_asian":["#1a1a2a","#6677dd"],
+    # LODES workforce
+    "lodes_total_jobs":        ["#1a2a1a","#4a9a4a"],
+    "lodes_jobs_per_resident": ["#1a2a1a","#4a9a4a"],
+    "lodes_pct_high_wage":     ["#1a2a4a","#4477dd"],
+    "lodes_pct_low_wage":      ["#2a1a1a","#cc4444"],
+    "lodes_pct_workers_ba":    ["#1a2a4a","#4477dd"],
+    "lodes_jobs_health":       ["#1a2a2a","#44aaaa"],
+    "lodes_jobs_professional": ["#1a2a4a","#4477dd"],
+    "lodes_jobs_retail":       ["#1a2a1a","#cc8800"],
+    "lodes_jobs_food":         ["#2a1a1a","#cc4444"],
+    # Composite indices
+    "idx_economic_anxiety":   ["#1a2a4a","#cc3300"],
+    "idx_latino_engagement":  ["#1a1a2a","#7755cc"],
+    "idx_working_class":      ["#1a2a1a","#cc8800"],
+    "idx_professional_class": ["#1a2a4a","#4477dd"],
+    "idx_senior_concentration":["#1a2a2a","#44aaaa"],
 }
+
+# ---------------------------------------------------------------------------
+# Composite Indices
+# Each index: list of (field, weight, direction, denominator_field)
+# direction +1 = higher value → higher index; -1 = inverse
+# ---------------------------------------------------------------------------
+COMPOSITE_INDICES = {
+    "idx_economic_anxiety": {
+        "label": "Economic Anxiety Index",
+        "description": "Unemployment, poverty, renter concentration, income deprivation, housing cost burden. Higher = more economically anxious geography.",
+        "color_scale": ["#1a2a4a","#cc3300"],
+        "components": [
+            ("unemployed",       1.0,  1, "employment_total"),
+            ("poverty_below",    1.0,  1, "poverty_total"),
+            ("renter_occupied",  0.8,  1, "occupied_units_total"),
+            ("median_hh_income", 1.0, -1, None),
+            ("median_gross_rent",0.6,  1, None),
+            ("median_home_value",0.4, -1, None),
+        ],
+    },
+    "idx_latino_engagement": {
+        "label": "Latino Engagement Index",
+        "description": "Hispanic population share, Spanish language prevalence, Spanish surname registration. Higher = stronger Latino audience concentration.",
+        "color_scale": ["#1a1a2a","#7755cc"],
+        "components": [
+            ("hispanic",   1.0, 1, "hispanic_total"),
+            ("lang_spanish",0.8, 1, "lang_total"),
+        ],
+    },
+    "idx_working_class": {
+        "label": "Working Class Index",
+        "description": "Production/service occupations, lower education, car-commute dependency, lower income. Higher = more working-class geography.",
+        "color_scale": ["#1a2a1a","#cc8800"],
+        "components": [
+            ("occ_production",    1.0,  1, "occupation_total"),
+            ("occ_service",       0.8,  1, "occupation_total"),
+            ("occ_construction",  0.6,  1, "occupation_total"),
+            ("edu_bachelors",     0.9, -1, "edu_total"),
+            ("median_hh_income",  0.8, -1, None),
+            ("transport_car_alone",0.5, 1, "transport_total"),
+        ],
+    },
+    "idx_professional_class": {
+        "label": "Professional Class Index",
+        "description": "College-educated, management occupations, high income, WFH concentration. Higher = more professional-class geography.",
+        "color_scale": ["#1a2a4a","#4477dd"],
+        "components": [
+            ("edu_bachelors",    1.0, 1, "edu_total"),
+            ("edu_masters",      0.8, 1, "edu_total"),
+            ("edu_professional", 0.6, 1, "edu_total"),
+            ("occ_mgmt_business",1.0, 1, "occupation_total"),
+            ("median_hh_income", 0.8, 1, None),
+            ("per_capita_income",0.6, 1, None),
+            ("transport_wfh",    0.5, 1, "transport_total"),
+        ],
+    },
+    "idx_senior_concentration": {
+        "label": "Senior Concentration Index",
+        "description": "Median age, homeownership, older housing stock. Higher = more senior-skewed geography.",
+        "color_scale": ["#1a2a2a","#44aaaa"],
+        "components": [
+            ("median_age",        1.0, 1, None),
+            ("owner_occupied",    0.7, 1, "occupied_units_total"),
+            ("built_1939_earlier",0.3, 1, "built_total"),
+            ("built_1940_1949",   0.3, 1, "built_total"),
+            ("built_1950_1959",   0.3, 1, "built_total"),
+            ("transport_car_alone",0.4,1, "transport_total"),
+        ],
+    },
+}
+
+
+def compute_composite_indices(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """
+    Compute all composite indices and add as columns (0–100 scale).
+    Each component field is percentile-ranked, optionally converted to a rate
+    first if a denominator is provided. Direction -1 inverts the rank.
+    Weighted average of all component ranks, scaled to 0–100.
+    """
+    result = gdf.copy()
+    for idx_key, idx_cfg in COMPOSITE_INDICES.items():
+        scores, weights = [], []
+        for field, weight, direction, denom_field in idx_cfg["components"]:
+            if field not in result.columns:
+                continue
+            if denom_field and denom_field in result.columns:
+                denom  = result[denom_field].replace(0, np.nan)
+                series = result[field].fillna(0) / denom
+            else:
+                series = result[field]
+            valid = series.replace([np.inf, -np.inf], np.nan).dropna()
+            if len(valid) < 10:
+                continue
+            pct_rank = series.rank(pct=True, na_option="keep")
+            if direction == -1:
+                pct_rank = 1 - pct_rank
+            scores.append(pct_rank * weight)
+            weights.append(weight)
+        if not scores:
+            result[idx_key] = np.nan
+            continue
+        combined = sum(scores) / sum(weights)
+        result[idx_key] = (combined * 100).round(1)
+    return result
 
 # Startup progress
 _startup_status = {"ready":False,"error":None,"steps":[],"current":None,"pct":0}
@@ -271,6 +457,7 @@ STARTUP_STEPS = [
     "Aggregate tracts → counties",
     "Build district GeoJSON",
     "Load election data",
+    "Load LODES workforce data",
     "Ready",
 ]
 
@@ -384,6 +571,73 @@ def _load_election_data():
     print(f"[STARTUP] Election data: {len(gdf)} VTDs, {len(gdf.columns)} fields loaded across 2020/2022/2024")
 
 
+def _load_lodes_data():
+    """
+    Load LODES WAC file, aggregate from census block to tract level,
+    and join onto the tract GeoDataFrame.
+
+    Census block FIPS: 15 digits — first 11 = tract GEOID.
+    Aggregation: sum all job counts by tract, then compute rates.
+    """
+    if not os.path.exists(LODES_WAC):
+        print("[STARTUP] LODES WAC file not found, skipping.")
+        return
+
+    tract_gdf = _cache.get("tract")
+    if tract_gdf is None:
+        print("[STARTUP] Tract layer not loaded yet, skipping LODES.")
+        return
+
+    # Load WAC — only the columns we need
+    raw_cols = ["w_geocode"] + [v[0] for v in LODES_FIELDS.values()]
+    df = pd.read_csv(LODES_WAC, usecols=raw_cols, dtype={"w_geocode": str})
+
+    # Extract tract GEOID from block FIPS (first 11 digits)
+    df["GEOID"] = df["w_geocode"].str[:11]
+
+    # Aggregate to tract level by summing all job counts
+    agg_cols = [v[0] for v in LODES_FIELDS.values()]
+    tract_jobs = df.groupby("GEOID")[agg_cols].sum().reset_index()
+
+    # Rename columns to our friendly names
+    rename_map = {v[0]: k for k, v in LODES_FIELDS.items()}
+    tract_jobs = tract_jobs.rename(columns=rename_map)
+
+    # Compute derived rate fields
+    if "lodes_total_jobs" in tract_jobs.columns:
+        tj = tract_jobs["lodes_total_jobs"].replace(0, np.nan)
+        if "lodes_jobs_high_wage" in tract_jobs.columns:
+            tract_jobs["lodes_pct_high_wage"] = (tract_jobs["lodes_jobs_high_wage"] / tj * 100).round(1)
+        if "lodes_jobs_low_wage" in tract_jobs.columns:
+            tract_jobs["lodes_pct_low_wage"]  = (tract_jobs["lodes_jobs_low_wage"]  / tj * 100).round(1)
+        if "lodes_workers_bachelors" in tract_jobs.columns:
+            tract_jobs["lodes_pct_workers_ba"] = (tract_jobs["lodes_workers_bachelors"] / tj * 100).round(1)
+
+    # Jobs per resident
+    pop_col = "total_population"
+    if pop_col in tract_gdf.columns:
+        # Merge pop onto tract_jobs, then compute ratio
+        pop_df = tract_gdf[["GEOID", pop_col]].copy()
+        pop_df["GEOID"] = pop_df["GEOID"].astype(str)
+        tract_jobs = tract_jobs.merge(pop_df, on="GEOID", how="left")
+        pop = tract_jobs[pop_col].replace(0, np.nan)
+        tract_jobs["lodes_jobs_per_resident"] = (tract_jobs["lodes_total_jobs"] / pop).round(3)
+        tract_jobs = tract_jobs.drop(columns=[pop_col])
+
+    # Join onto tract GeoDataFrame
+    tract_gdf2 = tract_gdf.copy()
+    tract_gdf2["GEOID"] = tract_gdf2["GEOID"].astype(str)
+    tract_jobs["GEOID"] = tract_jobs["GEOID"].astype(str)
+    tract_gdf2 = tract_gdf2.merge(tract_jobs, on="GEOID", how="left")
+
+    _cache["tract"] = tract_gdf2
+    _lodes_cache["loaded"] = True
+
+    lodes_cols = [c for c in tract_gdf2.columns if c.startswith("lodes_")]
+    matched    = tract_gdf2["lodes_total_jobs"].notna().sum()
+    print(f"[STARTUP] LODES: {matched}/{len(tract_gdf2)} tracts matched, {len(lodes_cols)} fields")
+
+
 def _run_startup():
     _startup_status["steps"] = [{"label":s,"status":"pending"} for s in STARTUP_STEPS]
     try:
@@ -406,6 +660,7 @@ def _run_startup():
 
         _step("Join PUMA data")
         puma_gdf = _join_layer(puma_shp, puma_df, cfg)
+        puma_gdf = compute_composite_indices(puma_gdf)
         _cache["puma"] = puma_gdf
         matched = puma_gdf[list(MARKETING_FIELDS)[0]].notna().sum()
         _step("Join PUMA data","done",f"{matched}/{len(puma_gdf)} matched")
@@ -422,9 +677,11 @@ def _run_startup():
 
         _step("Join tract data")
         tract_gdf = _join_layer(tract_shp, tract_df, cfg)
+        tract_gdf = compute_composite_indices(tract_gdf)
         _cache["tract"] = tract_gdf
         matched = tract_gdf[list(MARKETING_FIELDS)[0]].notna().sum()
-        _step("Join tract data","done",f"{matched}/{len(tract_gdf)} matched")
+        idx_count = sum(1 for k in COMPOSITE_INDICES if k in tract_gdf.columns)
+        _step("Join tract data","done",f"{matched}/{len(tract_gdf)} matched, {idx_count} indices")
 
         # Political shapefiles
         for key, label in [("cd119","Load congressional districts"),
@@ -481,6 +738,11 @@ def _run_startup():
         _load_election_data()
         _step("Load election data","done","VTDs with election results")
 
+        # LODES workforce data
+        _step("Load LODES workforce data")
+        _load_lodes_data()
+        _step("Load LODES workforce data","done")
+
         _step("Ready")
         _step("Ready","done","all data preloaded")
         _startup_status["ready"] = True
@@ -534,6 +796,11 @@ def gdf_to_geojson(gdf, fields=None, simplify_tolerance=None):
 @app.route("/")
 def index(): return render_template("index.html")
 
+@app.route("/guide")
+def user_guide():
+    return render_template("user_guide.html")
+
+
 @app.route("/logo.png")
 def logo():
     """Serve logo.png from project root if it exists, else 404."""
@@ -553,6 +820,21 @@ def api_startup_status():
         "pct":     _startup_status["pct"],
     })
 
+FIELD_CATEGORIES = [
+    {"label": "Composite Indices",  "fields": ["idx_economic_anxiety","idx_latino_engagement","idx_working_class","idx_professional_class","idx_senior_concentration"]},
+    {"label": "Workforce (LODES)",  "fields": ["lodes_total_jobs","lodes_jobs_per_resident","lodes_pct_high_wage","lodes_pct_low_wage","lodes_pct_workers_ba","lodes_jobs_health","lodes_jobs_professional","lodes_jobs_retail","lodes_jobs_food","lodes_jobs_finance","lodes_jobs_educ","lodes_jobs_govt","lodes_jobs_manufacturing"]},
+    {"label": "Income & Poverty",   "fields": ["median_hh_income","per_capita_income","poverty_below","median_gross_rent","median_home_value"]},
+    {"label": "Population & Age",   "fields": ["total_population","median_age","total_males","total_females"]},
+    {"label": "Race & Ethnicity",   "fields": ["hispanic","race_white","race_black","race_asian","race_aian","race_nhpi","race_other","race_two_or_more"]},
+    {"label": "Education",          "fields": ["edu_bachelors","edu_masters","edu_professional","edu_doctorate","edu_some_college","edu_associates","edu_hs_diploma","edu_less_than_hs"]},
+    {"label": "Employment",         "fields": ["employed","unemployed","in_labor_force","not_in_labor_force","civilian_labor_force"]},
+    {"label": "Occupation",         "fields": ["occ_mgmt_business","occ_service","occ_sales_office","occ_construction","occ_production"]},
+    {"label": "Housing",            "fields": ["owner_occupied","renter_occupied","occupied_units_total","housing_units_total","hu_mobile","median_rooms"]},
+    {"label": "Transportation",     "fields": ["transport_car_alone","transport_carpool","transport_public_transit","transport_wfh","transport_walk","transport_other"]},
+    {"label": "Language",           "fields": ["lang_english_only","lang_spanish","lang_other_indo_european","lang_asian_pacific"]},
+    {"label": "Household",          "fields": ["households_total","avg_household_size","family_households","nonfamily_households"]},
+]
+
 @app.route("/api/fields/<layer_name>")
 def api_fields(layer_name):
     if (e:=_require_ready()): return e
@@ -567,7 +849,15 @@ def api_fields(layer_name):
         s = gdf[f].dropna()
         if len(s): stats[f]={"min":float(s.min()),"max":float(s.max()),"mean":float(s.mean()),
                               "p25":float(s.quantile(.25)),"p50":float(s.quantile(.50)),"p75":float(s.quantile(.75))}
-    return jsonify({"marketing_fields":mkt,"extended_fields":ext,"stats":stats})
+    # Build category list for grouped field browser
+    field_label_map = {m["field"]:m["label"] for m in mkt}
+    categories = []
+    for cat in FIELD_CATEGORIES:
+        cat_fields = [{"field":f,"label":field_label_map.get(f,f.replace("_"," ").title())}
+                      for f in cat["fields"] if f in gdf.columns]
+        if cat_fields:
+            categories.append({"label":cat["label"],"fields":cat_fields})
+    return jsonify({"marketing_fields":mkt,"extended_fields":ext,"stats":stats,"categories":categories})
 
 @app.route("/api/geojson/<layer_name>")
 def api_geojson(layer_name):
@@ -576,6 +866,15 @@ def api_geojson(layer_name):
     gdf = load_layer(layer_name).copy()
     cfg = LAYERS[layer_name]
 
+    # --- Minimum population threshold ---
+    min_pop = request.args.get("min_population")
+    if min_pop:
+        try:
+            if "total_population" in gdf.columns:
+                gdf = gdf[gdf["total_population"].fillna(0) >= float(min_pop)]
+        except (ValueError, TypeError): pass
+
+    # --- Percentile filters ---
     filters_raw = request.args.get("filters")
     if filters_raw:
         try: filters=json.loads(filters_raw)
@@ -587,6 +886,19 @@ def api_geojson(layer_name):
             if not (1<=val<=100) or field not in gdf.columns: continue
             pct = compute_percentiles(gdf,field)
             gdf = gdf[pct<=val] if op=="lte" else gdf[pct>=(100-val)]
+
+    # --- Absolute count filters ---
+    abs_filters_raw = request.args.get("abs_filters")
+    if abs_filters_raw:
+        try: abs_filters=json.loads(abs_filters_raw)
+        except: abs_filters=[]
+        for f in abs_filters:
+            field=f.get("field"); op=f.get("operator","gte")
+            try: val=float(f.get("value",0))
+            except: continue
+            if field not in gdf.columns: continue
+            col=gdf[field].fillna(0)
+            gdf=gdf[col>=val] if op=="gte" else gdf[col<=val]
 
     county = request.args.get("county")
     if county:
@@ -803,7 +1115,7 @@ def api_csv_info(rel):
         "samples": df.head(3).to_dict(orient="records"),
     })
 
-#
+
 # @app.route("/api/csv_info/<path:rel>")
 # def api_csv_info(rel):
 #     """Inspect columns and sample rows of any CSV under data/inputs."""
@@ -818,14 +1130,14 @@ def api_csv_info(rel):
 #         "samples": df.head(3).to_dict(orient="records"),
 #     })
 
-#
-# @app.route("/api/shapefile_info/<path:rel>")
-# def api_shapefile_info(rel):
-#     p=os.path.join(DATA_DIR,rel)
-#     if not os.path.exists(p): return jsonify({"error":"not found"}),404
-#     gdf=gpd.read_file(p)
-#     rows=[{k:str(v) for k,v in r.items() if k!="geometry"} for _,r in gdf.head(5).iterrows()]
-#     return jsonify({"columns":list(gdf.columns),"feature_count":len(gdf),"samples":rows})
+
+@app.route("/api/shapefile_info/<path:rel>")
+def api_shapefile_info(rel):
+    p=os.path.join(DATA_DIR,rel)
+    if not os.path.exists(p): return jsonify({"error":"not found"}),404
+    gdf=gpd.read_file(p)
+    rows=[{k:str(v) for k,v in r.items() if k!="geometry"} for _,r in gdf.head(5).iterrows()]
+    return jsonify({"columns":list(gdf.columns),"feature_count":len(gdf),"samples":rows})
 
 # ── Election routes ────────────────────────────────────────────────────────────
 
@@ -1007,6 +1319,131 @@ def api_election_choropleth_scale(field):
     return jsonify({"low": scale[0], "high": scale[1]})
 
 
+@app.route("/api/reach/<layer_name>")
+def api_reach(layer_name: str):
+    """Compute audience reach summary for the currently filtered layer."""
+    if (e:=_require_ready()): return e
+    if layer_name not in LAYERS: return jsonify({"error":"unknown layer"}),400
+
+    gdf = load_layer(layer_name).copy()
+
+    # Apply all the same filters as api_geojson
+    min_pop = request.args.get("min_population")
+    if min_pop:
+        try:
+            if "total_population" in gdf.columns:
+                gdf = gdf[gdf["total_population"].fillna(0) >= float(min_pop)]
+        except: pass
+
+    filters_raw = request.args.get("filters")
+    if filters_raw:
+        try: filters=json.loads(filters_raw)
+        except: filters=[]
+        for f in filters:
+            field=f.get("field"); op=f.get("operator","lte")
+            try: val=float(f.get("value",50))
+            except: continue
+            if not (1<=val<=100) or field not in gdf.columns: continue
+            pct=compute_percentiles(gdf,field)
+            gdf=gdf[pct<=val] if op=="lte" else gdf[pct>=(100-val)]
+
+    abs_filters_raw = request.args.get("abs_filters")
+    if abs_filters_raw:
+        try: abs_filters=json.loads(abs_filters_raw)
+        except: abs_filters=[]
+        for f in abs_filters:
+            field=f.get("field"); op=f.get("operator","gte")
+            try: val=float(f.get("value",0))
+            except: continue
+            if field not in gdf.columns: continue
+            col=gdf[field].fillna(0)
+            gdf=gdf[col>=val] if op=="gte" else gdf[col<=val]
+
+    county=request.args.get("county")
+    if county:
+        if layer_name=="puma":
+            cp=load_county_polygon(county)
+            if cp is not None:
+                pp=gdf.to_crs(epsg=32614)
+                ov=pp.geometry.apply(lambda g:g.intersection(cp).area/g.area if g.area else 0)
+                gdf=gdf[ov>=0.10]
+        elif "_county" in gdf.columns:
+            gdf=gdf[gdf["_county"]==county]
+
+    district_layer=request.args.get("district_layer")
+    district_id=request.args.get("district_id")
+    if district_layer and district_id and district_layer in POLITICAL_LAYERS:
+        pcfg=POLITICAL_LAYERS[district_layer]
+        pgdf=_political_cache.get(district_layer,{}).get("gdf")
+        if pgdf is not None:
+            dist_row=pgdf[pgdf[pcfg["id_field"]].astype(str)==str(district_id)]
+            if not dist_row.empty:
+                dp=dist_row.to_crs(epsg=32614).geometry.union_all()
+                ep=gdf.to_crs(epsg=32614)
+                mask=ep.geometry.centroid.within(dp)
+                gdf=gdf[mask]
+
+    def safe_sum(col):
+        if col in gdf.columns:
+            v=gdf[col].fillna(0).sum()
+            return int(v) if not np.isnan(v) else 0
+        return None
+
+    edu_plus = sum(
+        safe_sum(f) or 0
+        for f in ["edu_bachelors","edu_masters","edu_professional","edu_doctorate"]
+    )
+
+    reach = {
+        "feature_count":      len(gdf),
+        "total_population":   safe_sum("total_population"),
+        "hispanic":           safe_sum("hispanic"),
+        "edu_bachelors_plus": edu_plus,
+        "owner_occupied":     safe_sum("owner_occupied"),
+        "renter_occupied":    safe_sum("renter_occupied"),
+        "transport_wfh":      safe_sum("transport_wfh"),
+        "lang_spanish":       safe_sum("lang_spanish"),
+        "employed":           safe_sum("employed"),
+    }
+
+    # Voter registration from election layer via spatial overlap
+    vtd_gdf = _election_cache.get("vtd")
+    if vtd_gdf is not None and not gdf.empty:
+        try:
+            import pyproj
+            from shapely.ops import transform as shp_t
+            pr = pyproj.Transformer.from_crs("EPSG:4326","EPSG:32614",always_xy=True).transform
+            census_union = gdf.geometry.union_all()
+            census_proj  = shp_t(pr, census_union)
+            vtd_proj     = vtd_gdf.to_crs(epsg=32614)
+            mask         = vtd_proj.geometry.centroid.within(census_proj)
+            fvtds        = vtd_gdf[mask.values]
+            reach["registered_voters"]  = int(fvtds["Voter_Registration"].fillna(0).sum())
+            reach["voter_turnout_2024"] = int(fvtds["Turnout"].fillna(0).sum())
+        except Exception:
+            reach["registered_voters"]  = None
+            reach["voter_turnout_2024"] = None
+
+    return jsonify(reach)
+
+
+@app.route("/api/indices")
+def api_indices():
+    """Return composite index metadata: labels, descriptions, components."""
+    result = {}
+    for key, cfg in COMPOSITE_INDICES.items():
+        result[key] = {
+            "label":       cfg["label"],
+            "description": cfg["description"],
+            "color_scale": cfg["color_scale"],
+            "components":  [
+                {"field": f, "weight": w, "direction": d, "denominator": dn}
+                for f, w, d, dn in cfg["components"]
+            ],
+        }
+    return jsonify(result)
+
+
 @app.route("/api/debug/<layer_name>")
 def api_debug(layer_name):
     if layer_name not in LAYERS: return jsonify({"error":"unknown layer"}),400
@@ -1034,7 +1471,17 @@ def api_overlap_debug(county):
                      "pct_of_puma":round(inter.area/pp.area*100,4) if pp.area else 0})
     return jsonify(sorted(rows,key=lambda r:-r["pct_of_puma"]))
 
+@app.after_request
+def add_no_cache(response):
+    """Disable browser caching for static JS/CSS files during development."""
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 if __name__ == "__main__":
     t = threading.Thread(target=_run_startup, daemon=True)
     t.start()
-    app.run(debug=False, port=6001, use_reloader=False)
+    app.run(debug=False, port=6001, use_reloader=False, threaded=True)

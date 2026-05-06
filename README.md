@@ -1,5 +1,16 @@
 # Serendipity Research — Demographic Dashboard
-**Version 2026.4.1**
+**Version 2026.5.0**
+
+### What's new in v2026.5.0
+- **Field browser views** — FEATURED / CATEGORY (12 groups) / ★ PINNED tabs in Display Variable
+- **Field pinning** — star any field to pin it for instant access
+- **Percentile range slider** — dual-handle slider with BOT/TOP preset buttons replaces manual input
+- **Active state summary bar** — shows geography, variable, filters, and feature count at a glance. RESET ALL clears everything.
+- **Startup loading screen** — full-screen centered card with logo, progress bar, and 17-step live status list
+- **LODES workforce data** — 2023 job counts by workplace location, aggregated to tract level (30+ fields)
+- **Composite indices** — 5 pre-built audience profiles scored 0–100 (Economic Anxiety, Latino Engagement, Working Class, Professional Class, Senior Concentration)
+- **Audience density tools** — minimum population threshold, minimum count filters, Audience Reach Panel
+- **Performance** — AbortController cancels stale requests, debounced renders, threaded Flask, no-cache headers
 
 A dark-terminal GIS dashboard for exploring Texas Census demographic data at the PUMA and Census Tract level, with multi-cycle election results (2020, 2022, 2024), swing analysis, political district overlays, county and district filtering, area-weighted demographic aggregation, percentile filtering, and data export.
 

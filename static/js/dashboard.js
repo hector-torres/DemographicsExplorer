@@ -7,6 +7,7 @@
 const State = {
   layer: "tract",         // active census layer
   choroField: null,       // field driving choropleth
+  currentScale: null,     // {low, high} hex for choropleth
   filters: [],            // array of {id, field, label, operator, value}
   county: null,           // active county filter (still used for census layer filtering)
   overlaySelection: null, // {layerKey, id, name} — selected feature within political overlay
@@ -14,7 +15,12 @@ const State = {
   geojsonCache: {},       // raw geojson per layer (unfiltered, for bounds)
   selectedFeatureId: null,
   filterIdCounter: 0,
-  politicalLayer: null,      // active political overlay key: "cd119"|"sldl"|"sldu"|null
+  absFilters: [],
+  absFilterIdCounter: 0,
+  minPopulation: 0,
+  pinnedFields: [],       // field keys pinned as favorites
+  fieldView: "featured",  // "featured" | "grouped" | "favorites" | "search"
+  politicalLayer: null,
 };
 
 // ─── Map init ────────────────────────────────────────────────────────────────
@@ -123,19 +129,12 @@ function hideHoverTooltip() {
   document.getElementById("map-hover-tooltip").classList.add("hidden");
 }
 function showMapLoading() {
-  const steps = document.getElementById("startup-steps-list");
-  const progWrap = document.getElementById("loading-progress-wrap");
-  if (steps) steps.style.display = "none";
-  if (progWrap) progWrap.classList.add("hidden");
-  const title = document.getElementById("loading-title");
-  if (title) title.textContent = "LOADING…";
-  document.getElementById("map-loading").classList.remove("hidden");
+  // Use the status pill for regular loads, not the full startup screen
+  showStatus("LOADING");
   document.getElementById("map-stats-panel").classList.add("hidden");
 }
 function hideMapLoading() {
-  document.getElementById("map-loading").classList.add("hidden");
-  const steps = document.getElementById("startup-steps-list");
-  if (steps) steps.style.display = "";
+  hideStatus();
   document.getElementById("map-stats-panel").classList.remove("hidden");
 }
 
@@ -253,7 +252,7 @@ function clearOverlaySelection() {
   document.getElementById("overlay-active-chip").classList.add("hidden");
   document.getElementById("overlay-search").value = "";
   document.getElementById("overlay-dropdown").classList.add("hidden");
-  loadAndRenderLayer();
+  scheduleLayerRender();
   map.fitBounds([[25.8,-106.6],[36.5,-93.5]]);
 }
 
@@ -306,34 +305,133 @@ async function loadFieldsMeta(layer) {
 }
 
 // ─── Render field lists ───────────────────────────────────────────────────────
+// ─── Field list rendering (grouped, favorites, pinning) ──────────────────────
+
+function makeFieldItem(f) {
+  const div = document.createElement("div");
+  div.className = "field-item" + (State.choroField === f.field ? " active" : "");
+  div.dataset.field = f.field;
+
+  const label = document.createElement("span");
+  label.className = "field-item-label";
+  label.innerHTML = `<span class="field-dot"></span>${f.label}`;
+  label.addEventListener("click", () => setChoroField(f.field, f.label));
+
+  const pin = document.createElement("button");
+  pin.className = "field-pin-btn" + (State.pinnedFields.includes(f.field) ? " pinned" : "");
+  pin.textContent = "★";
+  pin.title = "Pin to favorites";
+  pin.addEventListener("click", e => {
+    e.stopPropagation();
+    togglePinnedField(f.field);
+    pin.classList.toggle("pinned", State.pinnedFields.includes(f.field));
+    renderFavoritesView(State.fieldsMeta[State.layer]);
+  });
+
+  div.appendChild(label);
+  div.appendChild(pin);
+  return div;
+}
+
+function togglePinnedField(key) {
+  const idx = State.pinnedFields.indexOf(key);
+  if (idx >= 0) State.pinnedFields.splice(idx, 1);
+  else State.pinnedFields.push(key);
+}
+
+function renderGroupedView(meta) {
+  const el = document.getElementById("field-view-grouped");
+  if (!el || !meta.categories) return;
+  el.innerHTML = "";
+  const allFields = [...(meta.marketing_fields||[]),...(meta.extended_fields||[])];
+  const fieldMap = Object.fromEntries(allFields.map(f => [f.field, f]));
+  meta.categories.forEach(cat => {
+    const header = document.createElement("div");
+    header.className = "field-cat-header";
+    header.innerHTML = `<span>${cat.label}</span><span class="field-cat-arrow">▾</span>`;
+    const items = document.createElement("div");
+    items.className = "field-cat-items";
+    cat.fields.forEach(f => {
+      const src = fieldMap[f.field] || f;
+      if (src) items.appendChild(makeFieldItem(src));
+    });
+    header.addEventListener("click", () => {
+      items.classList.toggle("hidden");
+      header.querySelector(".field-cat-arrow").textContent =
+        items.classList.contains("hidden") ? "▸" : "▾";
+    });
+    el.appendChild(header);
+    el.appendChild(items);
+  });
+}
+
+function renderFavoritesView(meta) {
+  const el = document.getElementById("field-view-favorites");
+  const noPin = document.getElementById("no-pins-note");
+  if (!el) return;
+  [...el.children].forEach(c => { if (c.id !== "no-pins-note") c.remove(); });
+  const allFields = [...(meta?.marketing_fields||[]),...(meta?.extended_fields||[])];
+  const fieldMap = Object.fromEntries(allFields.map(f => [f.field, f]));
+  const pinned = State.pinnedFields.map(k => fieldMap[k]).filter(Boolean);
+  if (noPin) noPin.style.display = pinned.length ? "none" : "";
+  pinned.forEach(f => el.insertBefore(makeFieldItem(f), noPin));
+}
+
+function setFieldView(view) {
+  State.fieldView = view;
+  ["featured","grouped","favorites","search"].forEach(v => {
+    const el = document.getElementById("field-view-" + v);
+    if (el) el.classList.toggle("hidden", v !== view);
+  });
+  document.querySelectorAll(".fvt-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === view));
+  const extWrap = document.getElementById("extended-toggle-wrap");
+  if (extWrap) extWrap.style.display = (view === "featured") ? "" : "none";
+  const extList = document.getElementById("field-list-extended");
+  if (extList && view !== "featured") extList.classList.add("hidden");
+}
+
 function renderFieldLists(meta) {
-  const mkList = document.getElementById("field-list-marketing");
-  const exList = document.getElementById("field-list-extended");
+  if (!meta) return;
+  State.fieldsMeta[State.layer] = meta;
 
-  mkList.innerHTML = "";
-  exList.innerHTML = "";
+  const mkList  = document.getElementById("field-list-marketing");
+  const exList  = document.getElementById("field-list-extended");
+  const featEl  = document.getElementById("field-view-featured");
+  // Target whichever element exists — new HTML uses field-view-featured,
+  // old HTML uses field-list-marketing
+  const primary = featEl || mkList;
 
-  const make = (item) => {
-    const el = document.createElement("div");
-    el.className = "field-item" + (State.choroField === item.field ? " active" : "");
-    el.dataset.field = item.field;
-    el.innerHTML = `<span class="field-dot"></span>${item.label}`;
-    el.addEventListener("click", () => setChoroField(item.field, item.label));
-    return el;
-  };
+  if (primary) primary.innerHTML = "";
+  if (exList)  exList.innerHTML  = "";
 
-  meta.marketing_fields.forEach(item => mkList.appendChild(make(item)));
-  meta.extended_fields.forEach(item => exList.appendChild(make(item)));
+  (meta.marketing_fields || []).forEach(item => {
+    if (primary) primary.appendChild(makeFieldItem(item));
+    // Also populate legacy element if both exist
+    if (featEl && mkList) mkList.appendChild(makeFieldItem(item));
+  });
+  (meta.extended_fields || []).forEach(item => {
+    if (exList) exList.appendChild(makeFieldItem(item));
+  });
+
+  renderGroupedView(meta);
+  renderFavoritesView(meta);
 }
 
 function setChoroField(field, label) {
   State.choroField = field === State.choroField ? null : field;
-  // Update active classes
+  State.currentScale = null;
+  // Update field list active classes
   document.querySelectorAll(".field-item").forEach(el => {
     el.classList.toggle("active", el.dataset.field === State.choroField);
   });
+  // Clear index button state if a non-index field was selected
+  if (!State.choroField || !State.choroField.startsWith("idx_")) {
+    document.querySelectorAll(".index-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("index-description").classList.add("hidden");
+  }
   updateChoroplethLegend();
-  loadAndRenderLayer();
+  scheduleLayerRender();
 }
 
 function filterFieldList(query) {
@@ -378,7 +476,21 @@ async function updateChoroplethLegend() {
 }
 
 // ─── GeoJSON load & render ────────────────────────────────────────────────────
+let _activeLayerAbort  = null;   // AbortController for in-flight geojson request
+let _layerDebounceTimer = null;  // debounce timer
+
+// Debounced wrapper — rapid calls collapse into one
+function scheduleLayerRender() {
+  clearTimeout(_layerDebounceTimer);
+  _layerDebounceTimer = setTimeout(loadAndRenderLayer, 120);
+}
+
 async function loadAndRenderLayer() {
+  // Cancel any in-flight request
+  if (_activeLayerAbort) { _activeLayerAbort.abort(); }
+  _activeLayerAbort = new AbortController();
+  const signal = _activeLayerAbort.signal;
+
   showMapLoading();
   hideMapError();
 
@@ -390,6 +502,12 @@ async function loadAndRenderLayer() {
     params.set("district_layer", State.overlaySelection.layerKey);
     params.set("district_id",    State.overlaySelection.id);
   }
+  if (State.minPopulation > 0) params.set("min_population", State.minPopulation);
+  if (State.absFilters.length) {
+    params.set("abs_filters", JSON.stringify(State.absFilters.map(f => ({
+      field: f.field, operator: f.operator, value: f.value,
+    }))));
+  }
   if (State.filters.length) {
     const filterPayload = State.filters.map(f => ({
       field: f.field,
@@ -400,9 +518,10 @@ async function loadAndRenderLayer() {
   }
 
   try {
-    const res = await fetch(`/api/geojson/${State.layer}?${params}`);
+    const res = await fetch(`/api/geojson/${State.layer}?${params}`, { signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const geojson = await res.json();
+    if (signal.aborted) return;   // superseded by a newer call
 
     // Store current geojson for export
     State.currentGeojson = geojson;
@@ -416,7 +535,13 @@ async function loadAndRenderLayer() {
       geoLayer.eachLayer(l => { if (l._path) l._path.style.pointerEvents = "none"; });
       if (electionGeoLayer) electionGeoLayer.bringToFront();
     }
+
+    // Update reach panel if visible
+    if (!document.getElementById("reach-panel").classList.contains("hidden")) {
+      updateReachPanel();
+    }
   } catch (err) {
+    if (err.name === 'AbortError') return;   // clean cancel — no error display
     hideMapLoading();
     showMapError(`Failed to load ${State.layer} data: ${err.message}`);
     console.error(err);
@@ -622,6 +747,7 @@ async function selectFeatureInSidebar(id) {
   const allBtn = document.getElementById("show-all-fields-btn");
 
   section.style.display = "";
+  document.getElementById("section4-hint").style.display = "none";
   detailEl.innerHTML = '<div style="color:#333;font-size:10px;padding:8px 0;">LOADING…</div>';
   allPanel.classList.add("hidden");
   allBtn.textContent = "▶ ALL FIELDS";
@@ -718,14 +844,14 @@ function addFilter(field, label) {
   State.filters.push({ id, field, label, operator: "lte", value: 50 });
   renderFilterChips();
   updateFilterBadge();
-  loadAndRenderLayer();
+  scheduleLayerRender();
 }
 
 function removeFilter(id) {
   State.filters = State.filters.filter(f => f.id !== id);
   renderFilterChips();
   updateFilterBadge();
-  loadAndRenderLayer();
+  scheduleLayerRender();
 }
 
 function updateFilter(id, key, val) {
@@ -825,9 +951,12 @@ async function switchLayer(layer) {
   renderFieldLists(meta);
   initFilterSearch(meta);
   // Overlay names load on demand when an overlay is selected
+  // Re-init abs filter search for new layer
+  await initAbsFilterSearch();
 
   document.getElementById("stat-total").textContent = "—";
 
+  updateLodesVisibility();
   await loadAndRenderLayer();
 }
 
@@ -850,18 +979,16 @@ function renderStartupSteps(steps, current) {
 }
 
 function updateStartupProgress(pct) {
-  const wrap = document.getElementById("loading-progress-wrap");
-  const bar  = document.getElementById("loading-progress-bar");
-  const pctEl= document.getElementById("loading-progress-pct");
-  if (!wrap) return;
-  wrap.classList.remove("hidden");
-  bar.style.setProperty("--pct", pct + "%");
-  pctEl.textContent = pct + "%";
+  const bar   = document.getElementById("loading-progress-bar");
+  const pctEl = document.getElementById("loading-progress-pct");
+  if (bar)   bar.style.width = Math.round(pct) + "%";
+  if (pctEl) pctEl.textContent = Math.round(pct) + "%";
 }
 
 async function pollStartupStatus() {
   return new Promise((resolve, reject) => {
-    document.getElementById("loading-title").textContent = "INITIALIZING SERVER…";
+    const setTitle = t => { const el = document.getElementById("loading-title"); if (el) el.textContent = t; };
+    setTitle("INITIALIZING…");
     const interval = setInterval(async () => {
       try {
         const res  = await fetch("/api/startup_status");
@@ -871,42 +998,42 @@ async function pollStartupStatus() {
 
         if (data.error) {
           clearInterval(interval);
-          document.getElementById("loading-title").textContent = "STARTUP FAILED";
+          setTitle("STARTUP FAILED");
           reject(new Error(data.error));
         } else if (data.ready) {
           clearInterval(interval);
-          document.getElementById("loading-title").textContent = "READY";
+          setTitle("READY ✓");
           updateStartupProgress(100);
-          setTimeout(resolve, 400);   // brief pause so user sees 100%
+          setTimeout(resolve, 600);
         }
       } catch (e) {
-        // Server may not be up yet — keep polling silently
+        // Server not up yet — keep polling
       }
     }, 600);
   });
 }
 
 async function init() {
-  showMapLoading();
-  document.getElementById("loading-title").textContent = "CONNECTING…";
-  try {
-    // Wait for server to finish preloading all data
-    await pollStartupStatus();
+  const overlay = document.getElementById("map-loading");
+  const titleEl = document.getElementById("loading-title");
+  if (overlay) overlay.classList.remove("hidden");
+  if (titleEl) titleEl.textContent = "CONNECTING…";
 
-    // Immediately hide startup screen before any further loading
-    hideMapLoading();
-    // Brief pause so user sees the completed state
+  try {
+    await pollStartupStatus();
+    if (overlay) overlay.classList.add("hidden");
     await new Promise(r => setTimeout(r, 300));
     const meta = await loadFieldsMeta(State.layer);
     renderFieldLists(meta);
     initFilterSearch(meta);
-    // Overlay names load on demand when an overlay is selected
-
+    await initAbsFilterSearch();
     await loadAndRenderLayer();
     map.fitBounds([[25.8, -106.6], [36.5, -93.5]]);
-
+    updateLodesVisibility();
+    updateSummaryBar();
   } catch (err) {
-    hideMapLoading();
+    const ov = document.getElementById("map-loading");
+    if (ov) ov.classList.add("hidden");
     showMapError("Initialization failed: " + err.message);
     console.error(err);
   }
@@ -930,7 +1057,7 @@ document.getElementById("choro-clear").addEventListener("click", () => {
   State.currentScale = null;
   document.querySelectorAll(".field-item").forEach(el => el.classList.remove("active"));
   document.getElementById("choro-stats").classList.add("hidden");
-  loadAndRenderLayer();
+  scheduleLayerRender();
 });
 
 // Extended fields toggle
@@ -948,13 +1075,14 @@ document.getElementById("filters-clear-all").addEventListener("click", () => {
   State.filters = [];
   renderFilterChips();
   updateFilterBadge();
-  loadAndRenderLayer();
+  scheduleLayerRender();
 });
 
 // Selection clear
 document.getElementById("selection-clear").addEventListener("click", () => {
   State.selectedFeatureId = null;
   document.getElementById("selection-section").style.display = "none";
+  document.getElementById("section4-hint").style.display = "";
   if (geoLayer) geoLayer.resetStyle();
   map.closePopup();
 });
@@ -1001,6 +1129,7 @@ async function openDistrictProfile(layerKey, districtId) {
   const allBtn   = document.getElementById("district-show-all-btn");
 
   section.style.display = "";
+  document.getElementById("section4-hint").style.display = "none";
   detail.innerHTML = '<div style="color:#333;font-size:10px;padding:8px 0;">LOADING…</div>';
   allPanel.classList.add("hidden");
   allBtn.textContent = "▶ ALL FIELDS";
@@ -1207,7 +1336,7 @@ function clearPoliticalLayer() {
   document.getElementById("district-choro-clear").classList.add("hidden");
 
   // Reset census layer to full Texas
-  loadAndRenderLayer();
+  scheduleLayerRender();
   map.fitBounds([[25.8,-106.6],[36.5,-93.5]]);
 }
 
@@ -1391,6 +1520,12 @@ async function renderElectionLayer() {
   if (State.overlaySelection && State.overlaySelection.layerKey !== "county") {
     params.set("district_layer", State.overlaySelection.layerKey);
     params.set("district_id",    State.overlaySelection.id);
+  }
+  if (State.minPopulation > 0) params.set("min_population", State.minPopulation);
+  if (State.absFilters.length) {
+    params.set("abs_filters", JSON.stringify(State.absFilters.map(f => ({
+      field: f.field, operator: f.operator, value: f.value,
+    }))));
   }
 
   try {
@@ -1677,6 +1812,7 @@ document.getElementById("district-choro-clear").addEventListener("click", () => 
 // District detail section controls
 document.getElementById("district-section-clear").addEventListener("click", () => {
   document.getElementById("district-section").style.display = "none";
+  document.getElementById("section4-hint").style.display = "";
 });
 document.getElementById("district-show-all-btn").addEventListener("click", () => {
   const panel = document.getElementById("district-all-fields");
@@ -1691,12 +1827,15 @@ document.getElementById("district-show-all-btn").addEventListener("click", () =>
 document.getElementById("map-stats-close").addEventListener("click", () => {
   document.getElementById("map-stats-panel").classList.add("hidden");
 });
+// Reach panel toggle button in stats panel
+document.getElementById("reach-toggle-btn").addEventListener("click", toggleReachPanel);
 
 // Election layer events
 document.getElementById("election-toggle-btn").addEventListener("click", toggleElectionLayer);
 document.getElementById("election-clear").addEventListener("click", toggleElectionLayer);
 document.getElementById("election-detail-clear").addEventListener("click", () => {
   document.getElementById("election-detail-section").style.display = "none";
+  document.getElementById("section4-hint").style.display = "";
 });
 
 // Election field search
@@ -1712,6 +1851,545 @@ document.addEventListener("click", e => {
     document.getElementById("election-field-dropdown").classList.add("hidden");
 });
 document.getElementById("election-field-clear").addEventListener("click", clearElectionField);
+
+// ─── Population threshold ────────────────────────────────────────────────────
+let _minPopTimer = null;
+
+document.getElementById("min-pop-input").addEventListener("input", e => {
+  const val = parseInt(e.target.value) || 0;
+  State.minPopulation = val;
+  document.getElementById("min-pop-clear").classList.toggle("hidden", val === 0);
+  clearTimeout(_minPopTimer);
+  if (val >= 0) _minPopTimer = setTimeout(loadAndRenderLayer, 600);
+});
+
+document.getElementById("min-pop-clear").addEventListener("click", () => {
+  State.minPopulation = 0;
+  document.getElementById("min-pop-input").value = "";
+  document.getElementById("min-pop-clear").classList.add("hidden");
+  scheduleLayerRender();
+});
+
+// ─── Absolute count filters ───────────────────────────────────────────────────
+let absFieldDropdownFields = [];
+
+async function initAbsFilterSearch() {
+  // Reuse fieldsMeta for field list
+  const meta = State.fieldsMeta[State.layer];
+  if (!meta) return;
+  const all = [...(meta.marketing_fields||[]),...(meta.extended_fields||[])];
+  // Only count fields make sense for absolute filters — numeric ones
+  absFieldDropdownFields = all.filter(f => meta.stats?.[f.field]);
+}
+
+function renderAbsFilterDropdown(query) {
+  const dropdown = document.getElementById("abs-filter-dropdown");
+  const q = query.toLowerCase().trim();
+  const matches = q
+    ? absFieldDropdownFields.filter(f => f.label.toLowerCase().includes(q) || f.field.toLowerCase().includes(q)).slice(0,20)
+    : absFieldDropdownFields.slice(0,20);
+  if (!matches.length) { dropdown.classList.add("hidden"); return; }
+  dropdown.innerHTML = matches.map(f =>
+    `<div class="dropdown-item" data-field="${escHtml(f.field)}" data-label="${escHtml(f.label)}">${escHtml(f.label)}</div>`
+  ).join("");
+  dropdown.classList.remove("hidden");
+  dropdown.querySelectorAll(".dropdown-item").forEach(el => {
+    el.addEventListener("click", () => {
+      addAbsFilter(el.dataset.field, el.dataset.label);
+      document.getElementById("abs-filter-search").value = "";
+      dropdown.classList.add("hidden");
+    });
+  });
+}
+
+function addAbsFilter(field, label) {
+  if (State.absFilters.find(f => f.field === field)) return;
+  const id = `abs_${++State.absFilterIdCounter}`;
+  // Get a sensible default minimum from stats
+  const meta = State.fieldsMeta[State.layer];
+  const stats = meta?.stats?.[field];
+  const defaultVal = stats ? Math.round(stats.p25) : 100;
+  State.absFilters.push({id, field, label, operator: "gte", value: defaultVal});
+  renderAbsFilterChips();
+  updateAbsFilterBadge();
+  scheduleLayerRender();
+}
+
+function removeAbsFilter(id) {
+  State.absFilters = State.absFilters.filter(f => f.id !== id);
+  renderAbsFilterChips();
+  updateAbsFilterBadge();
+  scheduleLayerRender();
+}
+
+function updateAbsFilter(id, key, val) {
+  const f = State.absFilters.find(f => f.id === id);
+  if (f) {
+    f[key] = val;
+    scheduleAbsFilterReload();
+  }
+}
+
+let _absReloadTimer = null;
+function scheduleAbsFilterReload() {
+  clearTimeout(_absReloadTimer);
+  _absReloadTimer = setTimeout(loadAndRenderLayer, 500);
+}
+
+function renderAbsFilterChips() {
+  const container = document.getElementById("abs-active-filters");
+  container.innerHTML = "";
+  State.absFilters.forEach(f => {
+    const chip = document.createElement("div");
+    chip.className = "filter-chip";
+    chip.dataset.absFilterId = f.id;
+    chip.innerHTML = `
+      <div class="filter-chip-header">
+        <span class="filter-chip-label">${escHtml(f.label)}</span>
+        <span class="filter-chip-remove" data-id="${f.id}">✕</span>
+      </div>
+      <div class="filter-chip-controls">
+        <select data-id="${f.id}" data-key="operator">
+          <option value="gte" ${f.operator==="gte"?"selected":""}>AT LEAST</option>
+          <option value="lte" ${f.operator==="lte"?"selected":""}>AT MOST</option>
+        </select>
+        <input type="number" min="0" step="100" value="${f.value}" data-id="${f.id}" data-key="value" style="width:72px;">
+        <span class="filter-chip-suffix">PEOPLE</span>
+      </div>`;
+    chip.querySelector(".filter-chip-remove").addEventListener("click", () => removeAbsFilter(f.id));
+    chip.querySelector("select").addEventListener("change", e => updateAbsFilter(f.id,"operator",e.target.value));
+    chip.querySelector("input[type='number']").addEventListener("input", e => {
+      const v = parseFloat(e.target.value);
+      if (!isNaN(v)) updateAbsFilter(f.id,"value",v);
+    });
+    container.appendChild(chip);
+  });
+}
+
+function updateAbsFilterBadge() {
+  const badge = document.getElementById("abs-filter-count-badge");
+  badge.textContent = State.absFilters.length;
+  badge.classList.toggle("has-filters", State.absFilters.length > 0);
+  document.getElementById("abs-filters-clear-all").classList.toggle("hidden", State.absFilters.length === 0);
+}
+
+document.getElementById("abs-filter-search").addEventListener("input", e => {
+  if (e.target.value.trim()) renderAbsFilterDropdown(e.target.value);
+  else document.getElementById("abs-filter-dropdown").classList.add("hidden");
+});
+document.getElementById("abs-filter-search").addEventListener("focus", () => {
+  initAbsFilterSearch().then(() => renderAbsFilterDropdown(""));
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#abs-filter-search-wrap"))
+    document.getElementById("abs-filter-dropdown").classList.add("hidden");
+});
+document.getElementById("abs-filters-clear-all").addEventListener("click", () => {
+  State.absFilters = [];
+  renderAbsFilterChips();
+  updateAbsFilterBadge();
+  scheduleLayerRender();
+});
+
+// ─── Audience reach panel ─────────────────────────────────────────────────────
+let _reachDebounce = null;
+
+function buildReachParams() {
+  const params = new URLSearchParams();
+  if (State.county) params.set("county", State.county);
+  if (State.overlaySelection && State.overlaySelection.layerKey !== "county") {
+    params.set("district_layer", State.overlaySelection.layerKey);
+    params.set("district_id",    State.overlaySelection.id);
+  }
+  if (State.minPopulation > 0) params.set("min_population", State.minPopulation);
+  if (State.filters.length)
+    params.set("filters", JSON.stringify(State.filters.map(f => ({field:f.field,operator:f.operator,value:f.value}))));
+  if (State.absFilters.length)
+    params.set("abs_filters", JSON.stringify(State.absFilters.map(f => ({field:f.field,operator:f.operator,value:f.value}))));
+  return params;
+}
+
+function fmtReach(n) {
+  if (n == null) return "—";
+  if (n >= 1000000) return (n/1000000).toFixed(1) + "M";
+  if (n >= 1000)    return (n/1000).toFixed(0) + "K";
+  return n.toLocaleString();
+}
+
+async function updateReachPanel() {
+  const panel = document.getElementById("reach-panel");
+  const body  = document.getElementById("reach-body");
+  body.innerHTML = `<div class="reach-loading"><div class="spinner-sm"></div> CALCULATING…</div>`;
+
+  try {
+    const res  = await fetch(`/api/reach/${State.layer}?${buildReachParams()}`);
+    const data = await res.json();
+
+    const pop  = data.total_population;
+    const rows = [
+      { label: "TOTAL POPULATION",   value: fmtReach(pop),                        primary: true },
+      { label: "REGISTERED VOTERS",  value: fmtReach(data.registered_voters) },
+      { label: "2024 TURNOUT",       value: fmtReach(data.voter_turnout_2024) },
+      { divider: true },
+      { label: "HISPANIC / LATINO",  value: fmtReach(data.hispanic) +
+          (pop && data.hispanic ? ` <span style="color:#555;font-size:9px;">(${(data.hispanic/pop*100).toFixed(1)}%)</span>` : "") },
+      { label: "COLLEGE EDUCATED",   value: fmtReach(data.edu_bachelors_plus) +
+          (pop && data.edu_bachelors_plus ? ` <span style="color:#555;font-size:9px;">(${(data.edu_bachelors_plus/pop*100).toFixed(1)}%)</span>` : "") },
+      { label: "SPANISH SPEAKING",   value: fmtReach(data.lang_spanish) +
+          (pop && data.lang_spanish ? ` <span style="color:#555;font-size:9px;">(${(data.lang_spanish/pop*100).toFixed(1)}%)</span>` : "") },
+      { label: "WORK FROM HOME",     value: fmtReach(data.transport_wfh) },
+      { label: "OWNER-OCCUPIED",     value: fmtReach(data.owner_occupied) },
+      { label: "RENTER-OCCUPIED",    value: fmtReach(data.renter_occupied) },
+      { divider: true },
+      { label: "TRACTS / PUMAS",     value: (data.feature_count||0).toLocaleString() },
+    ];
+
+    body.innerHTML = rows.map(row => {
+      if (row.divider) return `<div class="reach-divider"></div>`;
+      return `<div class="reach-row">
+        <span class="reach-label">${row.label}</span>
+        <span class="reach-value${row.primary?" primary":""}">${row.value}</span>
+      </div>`;
+    }).join("");
+
+  } catch(err) {
+    body.innerHTML = `<div style="color:#662222;font-size:9px;padding:6px 0;">Failed to load reach data.</div>`;
+  }
+}
+
+function toggleReachPanel() {
+  const panel = document.getElementById("reach-panel");
+  const isHidden = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !isHidden);
+  if (!isHidden) return;
+  updateReachPanel();
+}
+
+document.getElementById("reach-close").addEventListener("click", () => {
+  document.getElementById("reach-panel").classList.add("hidden");
+});
+
+// Dim LODES buttons when PUMA layer is active (LODES data is tract-only)
+function updateLodesVisibility() {
+  const isTract = State.layer === "tract";
+  document.querySelectorAll(".lodes-btn").forEach(btn => {
+    btn.style.opacity = isTract ? "1" : "0.3";
+    btn.title = isTract ? "" : "LODES data is tract-level only";
+  });
+}
+
+// ─── Composite indices ───────────────────────────────────────────────────────
+let indexMeta = {};   // {key: {label, description, color_scale, components}}
+
+async function loadIndexMeta() {
+  if (Object.keys(indexMeta).length) return indexMeta;
+  try {
+    const res  = await fetch("/api/indices");
+    indexMeta  = await res.json();
+  } catch(e) { console.warn("index meta load failed", e); }
+  return indexMeta;
+}
+
+// Wire index quick-select buttons
+document.querySelectorAll(".index-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const field = btn.dataset.field;
+    const label = btn.dataset.label;
+
+    // Toggle off if already active
+    if (State.choroField === field) {
+      State.choroField = null;
+      State.currentScale = null;
+      document.querySelectorAll(".index-btn").forEach(b => b.classList.remove("active"));
+      document.getElementById("index-description").classList.add("hidden");
+      document.querySelectorAll(".field-item").forEach(el => el.classList.remove("active"));
+      document.getElementById("choro-stats").classList.add("hidden");
+      scheduleLayerRender();
+      return;
+    }
+
+    // Set active state
+    document.querySelectorAll(".index-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".field-item").forEach(el =>
+      el.classList.toggle("active", el.dataset.field === field));
+
+    // Show description
+    const meta = await loadIndexMeta();
+    const info = meta[field];
+    if (info) {
+      const descEl = document.getElementById("index-description");
+      descEl.textContent = info.description;
+      descEl.classList.remove("hidden");
+    }
+
+    // Set choropleth
+    setChoroField(field, label);
+  });
+});
+
+// Clear active index button state when choropleth is cleared externally
+const _origChoroClear = document.getElementById("choro-clear");
+if (_origChoroClear) {
+  _origChoroClear.addEventListener("click", () => {
+    document.querySelectorAll(".index-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById("index-description").classList.add("hidden");
+  });
+}
+
+// ─── Summary bar ─────────────────────────────────────────────────────────────
+function updateSummaryBar() {
+  const bar    = document.getElementById("summary-bar");
+  const inner  = document.getElementById("summary-bar-inner");
+  const reset  = document.getElementById("summary-bar-reset");
+  if (!bar || !inner) return;
+
+  const chips = [];
+
+  // Geography scope
+  if (State.overlaySelection) {
+    chips.push(`<span class="sb-chip geo">${escHtml(State.overlaySelection.name || State.overlaySelection.id)}</span>`);
+  } else if (State.county) {
+    chips.push(`<span class="sb-chip geo">${escHtml(State.county)}</span>`);
+  }
+
+  // Display variable
+  if (State.choroField) {
+    const meta = State.fieldsMeta[State.layer];
+    const all  = [...(meta?.marketing_fields||[]),...(meta?.extended_fields||[])];
+    const f    = all.find(f => f.field === State.choroField);
+    const lbl  = f?.label || State.choroField;
+    chips.push(`<span class="sb-chip field">${escHtml(lbl)}</span>`);
+  }
+
+  // Filters
+  const filterCount = State.filters.length + State.absFilters.length +
+                      (State.minPopulation > 0 ? 1 : 0);
+  if (filterCount > 0) {
+    chips.push(`<span class="sb-chip filter">${filterCount} FILTER${filterCount>1?"S":""}</span>`);
+  }
+
+  // Feature count from stats
+  const shown = document.getElementById("stat-count")?.textContent?.trim();
+  const total = document.getElementById("stat-total")?.textContent?.trim();
+  if (shown && shown !== "—" && total && total !== "—") {
+    chips.push(`<span class="sb-chip count">${shown} / ${total}</span>`);
+  }
+
+  const hasState = chips.length > 0;
+  bar.classList.toggle("hidden", !hasState);
+  inner.innerHTML = chips.join('<span class="sb-sep">·</span>');
+  reset.classList.toggle("hidden", !hasState);
+
+  // Adjust app height to account for summary bar
+  const app = document.getElementById("app");
+  if (app) app.style.height = hasState ? "calc(100vh - 96px)" : "calc(100vh - 66px)";
+}
+
+document.getElementById("summary-bar-reset")?.addEventListener("click", () => {
+  // Reset everything
+  State.overlaySelection = null; State.county = null;
+  State.choroField = null; State.currentScale = null;
+  State.filters = []; State.absFilters = []; State.minPopulation = 0;
+  document.querySelectorAll(".field-item").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".index-btn,.lodes-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("index-description")?.classList.add("hidden");
+  document.getElementById("choro-stats")?.classList.add("hidden");
+  document.getElementById("overlay-active-chip")?.classList.add("hidden");
+  document.getElementById("overlay-search").value = "";
+  document.getElementById("min-pop-input").value = "0";
+  renderFilterChips(); updateFilterBadge();
+  renderAbsFilterChips(); updateAbsFilterBadge();
+  if (politicalGeoLayer) clearPoliticalLayer();
+  scheduleLayerRender();
+  map.fitBounds([[25.8,-106.6],[36.5,-93.5]]);
+  updateSummaryBar();
+});
+
+// ─── Percentile range slider ──────────────────────────────────────────────────
+let _sliderField = null;
+let _sliderLabel = null;
+
+function openPctSlider(field, label) {
+  _sliderField = field; _sliderLabel = label;
+  const wrap = document.getElementById("pct-slider-wrap");
+  document.getElementById("pct-slider-label").textContent = label;
+  document.getElementById("pct-range-low").value  = 0;
+  document.getElementById("pct-range-high").value = 100;
+  updateSliderUI();
+  wrap.classList.remove("hidden");
+  wrap.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+function updateSliderUI() {
+  const low  = parseInt(document.getElementById("pct-range-low").value);
+  const high = parseInt(document.getElementById("pct-range-high").value);
+  document.getElementById("pct-low-val").textContent  = low  + "%";
+  document.getElementById("pct-high-val").textContent = high + "%";
+  // Update track fill
+  const range = document.getElementById("pct-slider-range");
+  range.style.left  = low  + "%";
+  range.style.width = (high - low) + "%";
+}
+
+// Slider inputs
+["pct-range-low","pct-range-high"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", () => {
+    // Keep low <= high
+    const low  = parseInt(document.getElementById("pct-range-low").value);
+    const high = parseInt(document.getElementById("pct-range-high").value);
+    if (id === "pct-range-low"  && low  > high) document.getElementById("pct-range-low").value  = high;
+    if (id === "pct-range-high" && high < low)  document.getElementById("pct-range-high").value = low;
+    updateSliderUI();
+  });
+});
+
+// Preset buttons
+document.querySelectorAll(".pct-preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById("pct-range-low").value  = btn.dataset.low;
+    document.getElementById("pct-range-high").value = btn.dataset.high;
+    updateSliderUI();
+  });
+});
+
+// Apply button
+document.getElementById("pct-slider-apply").addEventListener("click", () => {
+  if (!_sliderField) return;
+  const low  = parseInt(document.getElementById("pct-range-low").value);
+  const high = parseInt(document.getElementById("pct-range-high").value);
+  if (low === 0 && high === 100) return; // no filter
+
+  // Add one or two filter chips based on the selection
+  if (low > 0) {
+    // Bottom filter: keep those ABOVE low (i.e. exclude bottom X%)
+    const id = `f_${++State.filterIdCounter}`;
+    State.filters.push({id, field:_sliderField, label:_sliderLabel, operator:"gte", value: low});
+  }
+  if (high < 100) {
+    // Top filter: keep those BELOW high (i.e. exclude top X%)
+    const id = `f_${++State.filterIdCounter}`;
+    State.filters.push({id, field:_sliderField, label:_sliderLabel, operator:"lte", value: high});
+  }
+  renderFilterChips(); updateFilterBadge();
+  scheduleLayerRender(); updateSummaryBar();
+  document.getElementById("pct-slider-wrap").classList.add("hidden");
+  _sliderField = null;
+});
+
+document.getElementById("pct-slider-close").addEventListener("click", () => {
+  document.getElementById("pct-slider-wrap").classList.add("hidden");
+  _sliderField = null;
+});
+
+// ─── Field search (cross-view) ────────────────────────────────────────────────
+document.getElementById("field-search").addEventListener("input", e => {
+  const q = e.target.value.toLowerCase().trim();
+  if (!q) {
+    setFieldView(State.fieldView === "search" ? "featured" : State.fieldView);
+    return;
+  }
+  setFieldView("search");
+  const meta = State.fieldsMeta[State.layer];
+  const all  = [...(meta?.marketing_fields||[]),...(meta?.extended_fields||[])];
+  const matches = all.filter(f =>
+    f.label.toLowerCase().includes(q) || f.field.toLowerCase().includes(q));
+  const el = document.getElementById("field-view-search");
+  el.innerHTML = "";
+  if (matches.length === 0) {
+    el.innerHTML = `<div class="dim-note" style="padding:8px;">No fields match "${escHtml(q)}"</div>`;
+    return;
+  }
+  matches.forEach(f => el.appendChild(makeFieldItem(f)));
+  // Re-wire events
+  el.querySelectorAll(".field-item").forEach(item => {
+    const f = matches.find(m => m.field === item.dataset.field);
+    if (!f) return;
+    item.querySelector(".field-item-label")?.addEventListener("click", () => setChoroField(f.field, f.label));
+    const pin = item.querySelector(".field-pin-btn");
+    if (pin) pin.addEventListener("click", ev => {
+      ev.stopPropagation();
+      togglePinnedField(f.field);
+      pin.classList.toggle("pinned", State.pinnedFields.includes(f.field));
+      renderFavoritesView(meta);
+    });
+  });
+});
+
+// ─── Field view toggle buttons ────────────────────────────────────────────────
+document.querySelectorAll(".fvt-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById("field-search").value = "";
+    setFieldView(btn.dataset.view);
+  });
+});
+
+// ─── Wire filter field dropdown to open slider ────────────────────────────────
+// Override the dropdown item click to open slider instead of directly adding filter
+const _origInitFilter = initFilterSearch;
+initFilterSearch = function(meta) {
+  _origInitFilter(meta);
+  // Re-wire the filter dropdown to open the slider
+  const dropdown = document.getElementById("filter-field-dropdown");
+  if (!dropdown) return;
+  const observer = new MutationObserver(() => {
+    dropdown.querySelectorAll(".dropdown-item[data-field]:not([data-slider-wired])").forEach(item => {
+      item.dataset.sliderWired = "1";
+      item.addEventListener("click", e => {
+        e.stopPropagation();
+        const field = item.dataset.field;
+        const label = item.dataset.label || field;
+        document.getElementById("filter-field-search").value = "";
+        dropdown.classList.add("hidden");
+        openPctSlider(field, label);
+      }, true); // capture phase to fire before the original
+    });
+  });
+  observer.observe(dropdown, {childList: true});
+};
+
+// ─── Hook updateSummaryBar into layer renders ─────────────────────────────────
+const _origUpdateLayerStats = updateLayerStats;
+updateLayerStats = function(geojson) {
+  _origUpdateLayerStats(geojson);
+  setTimeout(updateSummaryBar, 50); // after DOM updates
+};
+
+// ─── Collapsible sidebar sections ────────────────────────────────────────────
+document.querySelectorAll(".collapsible-header").forEach(header => {
+  const targetId = header.dataset.target;
+  const body     = document.getElementById(targetId);
+  const arrow    = header.querySelector(".collapse-arrow");
+  if (!body) return;
+  header.addEventListener("click", () => {
+    const isCollapsed = body.classList.contains("collapsed");
+    body.classList.toggle("collapsed", !isCollapsed);
+    arrow?.classList.toggle("collapsed", !isCollapsed);
+  });
+});
+
+// ─── Election quick-select buttons ───────────────────────────────────────────
+document.querySelectorAll(".quick-field-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const field = btn.dataset.field;
+    const label = btn.dataset.label;
+    if (!field || !label) return;
+    // Mark active
+    document.querySelectorAll(".quick-field-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    // If election layer not on, toggle it first
+    if (!electionVisible) await toggleElectionLayer();
+    await setElectionField(field, label);
+  });
+});
+
+// Sync quick-field active state when field is cleared or changed
+const _origClearElectionField = clearElectionField;
+clearElectionField = function() {
+  document.querySelectorAll(".quick-field-btn").forEach(b => b.classList.remove("active"));
+  _origClearElectionField();
+};
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
 init();

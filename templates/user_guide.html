@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Guide — Serendipity Research</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #080808; color: #c0c0c0;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 13px; line-height: 1.7; min-height: 100%;
+    }
+
+    /* Title bar */
+    .title-bar {
+      width: 100%; background: #000; border-bottom: 1px solid #1a1a1a;
+      padding: 0 32px; height: 64px; display: flex; align-items: center;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .title-bar-logo { height: 32px; width: auto; opacity: 0.85; }
+    .title-bar-nav { display: flex; align-items: stretch; margin-left: 24px; }
+    .title-bar-nav a {
+      font-size: 12px; font-weight: 400; letter-spacing: 0.16em;
+      text-transform: uppercase; text-decoration: none; color: #888;
+      padding: 0 14px; display: flex; align-items: center;
+      border-bottom: 2px solid transparent; height: 64px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .title-bar-nav a:hover { color: #fff; }
+    .title-bar-nav a.active { color: #4477dd; border-bottom-color: #4477dd; }
+    .title-bar-brand { position: absolute; right: 32px; font-size: 13px; color: #555; }
+
+    /* Accent line */
+    .accent-line {
+      width: 100%; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, #6b0000 15%, #cc1100 40%, #aa0000 60%, #5a0000 85%, transparent 100%);
+    }
+
+    /* Layout */
+    .page-wrap { display: flex; max-width: 1200px; margin: 0 auto; padding: 0 32px 80px; }
+
+    /* Sticky TOC sidebar */
+    .toc-sidebar {
+      width: 220px; min-width: 220px; padding: 40px 0 40px 0;
+      position: sticky; top: 66px; height: calc(100vh - 66px);
+      overflow-y: auto; border-right: 1px solid #141414;
+      scrollbar-width: thin; scrollbar-color: #1e1e1e #080808;
+    }
+    .toc-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+      text-transform: uppercase; color: #333; padding: 0 20px 10px;
+      border-bottom: 1px solid #141414; margin-bottom: 8px;
+    }
+    .toc-item {
+      display: block; padding: 5px 20px; font-size: 10px; font-weight: 400;
+      letter-spacing: 0.06em; text-decoration: none; color: #444;
+      transition: color 0.15s; border-left: 2px solid transparent;
+    }
+    .toc-item:hover { color: #888; }
+    .toc-item.active { color: #4477dd; border-left-color: #4477dd; background: rgba(68,119,221,0.05); }
+    .toc-item.sub { padding-left: 32px; font-size: 9px; color: #333; }
+    .toc-item.sub:hover { color: #666; }
+
+    /* Main content */
+    .content { flex: 1; padding: 40px 0 40px 48px; max-width: 820px; }
+
+    /* Version badge */
+    .version-badge {
+      display: inline-block; font-size: 9px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      background: rgba(68,119,221,0.12); border: 1px solid #1a3060;
+      border-radius: 2px; color: #4477dd; padding: 2px 8px; margin-bottom: 24px;
+    }
+
+    /* Typography */
+    h1 { font-size: 22px; font-weight: 700; color: #e8e8e8; letter-spacing: -0.01em; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #555; margin-bottom: 32px; }
+
+    h2 {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #444; border-bottom: 1px solid #141414; padding-bottom: 8px;
+      margin: 48px 0 20px; display: flex; align-items: center; gap: 10px;
+    }
+    h2 .num { color: #2a2a2a; font-size: 8px; }
+    h3 { font-size: 12px; font-weight: 700; color: #c0c0c0; margin: 24px 0 10px; }
+    p { color: #888; margin-bottom: 12px; }
+    strong { color: #c0c0c0; font-weight: 600; }
+
+    /* Callout boxes */
+    .callout {
+      background: #0d0d0d; border: 1px solid #1a1a1a; border-radius: 2px;
+      padding: 14px 16px; margin: 16px 0;
+    }
+    .callout.blue  { border-left: 3px solid #2a4a8a; background: rgba(10,22,40,0.6); }
+    .callout.amber { border-left: 3px solid #664400; background: rgba(40,25,0,0.6); }
+    .callout.green { border-left: 3px solid #2a5a2a; background: rgba(10,25,10,0.6); }
+    .callout-label {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .callout.blue  .callout-label { color: #4477dd; }
+    .callout.amber .callout-label { color: #cc8800; }
+    .callout.green .callout-label { color: #4a9a4a; }
+    .callout p { margin: 0; font-size: 12px; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11px; }
+    th {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #333; background: #0d0d0d; padding: 8px 12px; text-align: left;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    td { padding: 7px 12px; border-bottom: 1px solid #0f0f0f; color: #888; vertical-align: top; }
+    tr:hover td { background: #0d0d0d; }
+    td:first-child { color: #c0c0c0; font-weight: 500; white-space: nowrap; }
+
+    /* Step lists */
+    .step-list { list-style: none; margin: 12px 0; }
+    .step-list li {
+      display: flex; gap: 12px; padding: 6px 0;
+      border-bottom: 1px solid #0f0f0f; font-size: 12px; color: #888;
+    }
+    .step-list li:last-child { border-bottom: none; }
+    .step-num {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: #4477dd;
+      background: rgba(68,119,221,0.1); border: 1px solid #1a3060;
+      border-radius: 2px; padding: 1px 6px; height: fit-content; margin-top: 1px;
+      min-width: 24px; text-align: center;
+    }
+
+    /* Field pills */
+    .field-pill {
+      display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 2px;
+      border: 1px solid #1e1e1e; background: #0d0d0d; color: #555;
+      margin: 2px; white-space: nowrap;
+    }
+    .field-pill.blue  { color: #4477dd; border-color: #1a3060; background: rgba(68,119,221,0.08); }
+    .field-pill.amber { color: #cc8800; border-color: #664400; background: rgba(100,60,0,0.08); }
+    .field-pill.red   { color: #cc4444; border-color: #6a1a1a; background: rgba(180,0,0,0.08); }
+    .field-pill.green { color: #4a9a4a; border-color: #1a5a1a; background: rgba(0,80,0,0.08); }
+    .field-pill.purple{ color: #7755cc; border-color: #3a2a6a; background: rgba(80,40,160,0.08); }
+
+    /* Quick ref table */
+    .qref td:first-child { font-size: 11px; color: #888; font-weight: 400; }
+    .qref td:last-child  { color: #555; font-size: 11px; }
+
+    /* Code / field names */
+    code {
+      font-family: monospace; font-size: 11px; background: #111;
+      border: 1px solid #1a1a1a; border-radius: 2px; padding: 1px 5px; color: #888;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center; font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #2a2a2a; padding: 24px 0;
+      border-top: 1px solid #141414; margin-top: 40px;
+    }
+
+    /* Scroll behavior */
+    html { scroll-behavior: smooth; }
+    :target { scroll-margin-top: 80px; }
+  </style>
+</head>
+<body>
+
+  <!-- Title bar -->
+  <div class="title-bar">
+    <img class="title-bar-logo" src="/logo.png" alt="Serendipity Research"
+         onerror="this.style.display='none'">
+    <nav class="title-bar-nav">
+      <a href="/">Demographic Dashboard</a>
+      <a href="/guide" class="active">User Guide</a>
+    </nav>
+    <div class="title-bar-brand">v2026.5.0</div>
+  </div>
+  <div class="accent-line"></div>
+
+  <div class="page-wrap">
+
+    <!-- TOC -->
+    <nav class="toc-sidebar" id="toc">
+      <div class="toc-label">Contents</div>
+      <a href="#overview"   class="toc-item">Interface Overview</a>
+      <a href="#geography"  class="toc-item">01 — Geography</a>
+      <a href="#analysis"   class="toc-item">02 — Demographic Analysis</a>
+      <a href="#indices"    class="toc-item sub">Composite Indices</a>
+      <a href="#workforce"  class="toc-item sub">Workforce Density</a>
+      <a href="#fieldviews" class="toc-item sub">Field Browser Views</a>
+      <a href="#fieldpins"  class="toc-item sub">Pinned Favorites</a>
+      <a href="#pctslider"  class="toc-item sub">Percentile Slider</a>
+      <a href="#filters"    class="toc-item sub">Audience Filters</a>
+      <a href="#reach"      class="toc-item sub">Reach Panel</a>
+      <a href="#summarybar" class="toc-item sub">Summary Bar</a>
+      <a href="#election"   class="toc-item">03 — Election Results</a>
+      <a href="#swing"      class="toc-item sub">Swing Analysis</a>
+      <a href="#profile"    class="toc-item">04 — Feature Profile</a>
+      <a href="#workflows"  class="toc-item">Strategic Workflows</a>
+      <a href="#persuasion" class="toc-item sub">Persuadable Audiences</a>
+      <a href="#latino"     class="toc-item sub">Latino Strategy</a>
+      <a href="#districts"  class="toc-item sub">District Analysis</a>
+      <a href="#swing-wf"   class="toc-item sub">Swing Analysis</a>
+      <a href="#media"      class="toc-item sub">Media Planning</a>
+      <a href="#fieldref"   class="toc-item">Field Reference</a>
+      <a href="#lodes"      class="toc-item sub">LODES Fields</a>
+      <a href="#startup"    class="toc-item">Startup Screen</a>
+      <a href="#quickref"   class="toc-item">Quick Reference</a>
+    </nav>
+
+    <!-- Content -->
+    <main class="content">
+
+      <div class="version-badge">Version 2026.4.1</div>
+      <h1>Demographic Dashboard</h1>
+      <p class="subtitle">Strategic Communications User Guide — Serendipity Research</p>
+
+      <!-- ═══════════════════════════════════════════════ OVERVIEW -->
+      <h2 id="overview"><span class="num">00</span> Interface Overview</h2>
+      <p>The Demographic Dashboard integrates Texas Census demographic data, 2020–2024 election results, LODES workforce data, and political district boundaries into a single analytical environment for strategic communications work.</p>
+
+      <table>
+        <tr><th>Area</th><th>What it does</th></tr>
+        <tr><td>Sidebar</td><td>Five numbered workflow sections — Geography, Demographic Analysis, Election Results, Feature Profile, Export</td></tr>
+        <tr><td>Map</td><td>Choropleth census layer + optional political overlay + optional VTD election layer</td></tr>
+        <tr><td>Hover tooltip</td><td>Appears after 0.5–1 second. Shows active display variable + key marketing fields</td></tr>
+        <tr><td>Click</td><td>Opens full demographic or election profile in Section 04</td></tr>
+        <tr><td>Stats panel</td><td>Bottom-right of map. Features shown, choropleth statistics, color scale, Reach button</td></tr>
+        <tr><td>Reach panel</td><td>Audience size estimates across all filtered features</td></tr>
+        <tr><td>Summary bar</td><td>Strip below title bar: active geography, display variable, filter count, feature count. RESET ALL clears everything.</td></tr>
+        <tr><td>Startup screen</td><td>Full-screen card with logo, progress bar, and 17-step loading list with live status indicators.</td></tr>
+      </table>
+
+      <!-- ═══════════════════════════════════════════════ SECTION 01 -->
+      <h2 id="geography"><span class="num">01</span> Geography</h2>
+
+      <h3>Census Layer</h3>
+      <p>Toggle between <strong>PUMA</strong> (217 regional geographies, 100,000+ people each) and <strong>Tract</strong> (~6,900 neighborhood-level geographies). Default is Tract. LODES workforce data is only available at the Tract level.</p>
+
+      <h3>Scope to District / County</h3>
+      <p>Select an overlay type to scope the entire dashboard to a specific geography. All census features, election VTDs, and percentile calculations narrow to the selected area.</p>
+
+      <table>
+        <tr><th>Overlay</th><th>Features</th><th>Best for</th></tr>
+        <tr><td>US Congress</td><td>38 districts</td><td>Federal campaign targeting, congressional issue advocacy</td></tr>
+        <tr><td>TX House</td><td>150 districts</td><td>State legislative campaigns, local issue organizing</td></tr>
+        <tr><td>TX Senate</td><td>31 districts</td><td>State senate campaigns, statewide policy work</td></tr>
+        <tr><td>County</td><td>254 counties</td><td>Local campaigns, county-level media planning</td></tr>
+      </table>
+
+      <div class="callout blue">
+        <div class="callout-label">Tip</div>
+        <p>Click any district/county <strong>boundary line</strong> on the map to open a full population-weighted demographic profile for that entire district in Section 04.</p>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════ SECTION 02 -->
+      <h2 id="analysis"><span class="num">02</span> Demographic Analysis</h2>
+
+      <p>Select any field from the Display Variable search to color-code the map. The Stats panel (bottom-right) updates with field statistics and a color scale legend.</p>
+
+      <h3 id="fieldviews">Field Browser Views</h3>
+      <p>The Display Variable section has three view modes, toggled by pill buttons at the top of the field list:</p>
+      <table>
+        <tr><th>View</th><th>What it shows</th><th>Best for</th></tr>
+        <tr><td><strong>FEATURED</strong></td><td>The curated 30 marketing fields</td><td>Day-to-day analysis</td></tr>
+        <tr><td><strong>CATEGORY</strong></td><td>All 150+ fields in 12 collapsible groups: Composite Indices, Workforce/LODES, Income &amp; Poverty, Population &amp; Age, Race &amp; Ethnicity, Education, Employment, Occupation, Housing, Transportation, Language, Household</td><td>Browsing by topic without searching</td></tr>
+        <tr><td><strong>★ PINNED</strong></td><td>Fields you have starred</td><td>Instant access to personal go-to fields</td></tr>
+      </table>
+      <p>The field search bar searches all 150+ fields live and switches to a search results view automatically.</p>
+
+      <h3 id="fieldpins">Pinned Favorites (★)</h3>
+      <p>Every field in every view shows a <strong>★</strong> button on hover. Click to pin to <strong>★ PINNED</strong>. The star turns amber when pinned. Click again to unpin. Useful for building a personal shortlist of fields for a specific client or project.</p>
+
+      <h3 id="pctslider">Percentile Range Slider</h3>
+      <p>Selecting a field in Percentile Filters opens a range slider with two handles — set both a low and high percentile simultaneously.</p>
+      <table>
+        <tr><th>Preset</th><th>Shows</th><th>Use case</th></tr>
+        <tr><td>BOT 25%</td><td>Lowest quartile tracts</td><td>Lowest income, highest poverty</td></tr>
+        <tr><td>BOT 33%</td><td>Lowest third</td><td>Broad low-end filter</td></tr>
+        <tr><td>BOT 50%</td><td>Below median</td><td>Below-average concentration</td></tr>
+        <tr><td>TOP 50%</td><td>Above median</td><td>Above-average concentration</td></tr>
+        <tr><td>TOP 33%</td><td>Upper third</td><td>High concentration without extremes</td></tr>
+        <tr><td>TOP 25%</td><td>Top quartile</td><td>Highest concentration tracts</td></tr>
+      </table>
+      <div class="callout green">
+        <div class="callout-label">Middle-range filtering</div>
+        <p>Set low=25, high=75 on any field to keep only the middle 50% of tracts — ideal for targeting moderate geographies and excluding statistical outliers at both ends.</p>
+      </div>
+
+      <h3 id="indices">Composite Indices</h3>
+      <p>Five pre-built audience profiles, each scored 0–100 based on weighted percentile ranks of component fields. Click any button to map immediately.</p>
+
+      <table>
+        <tr><th>Index</th><th>Components</th><th>Strategic use</th></tr>
+        <tr>
+          <td><span class="field-pill red">ECONOMIC ANXIETY</span></td>
+          <td>Unemployment rate, poverty rate, renter share, income, rent level</td>
+          <td>Economic messaging, cost-of-living, jobs framing</td>
+        </tr>
+        <tr>
+          <td><span class="field-pill purple">LATINO ENGAGEMENT</span></td>
+          <td>Hispanic share, Spanish language prevalence</td>
+          <td>Latino audience identification, Spanish-language outreach targeting</td>
+        </tr>
+        <tr>
+          <td><span class="field-pill amber">WORKING CLASS</span></td>
+          <td>Production/service/construction occupations, lower education, car commute</td>
+          <td>Blue-collar audience, trade/manufacturing message framing</td>
+        </tr>
+        <tr>
+          <td><span class="field-pill blue">PROFESSIONAL CLASS</span></td>
+          <td>College education, management occupation, high income, WFH</td>
+          <td>Professional-class persuasion, digital-first channels</td>
+        </tr>
+        <tr>
+          <td><span class="field-pill">SENIOR CONCENTRATION</span></td>
+          <td>Median age, homeownership, older housing stock</td>
+          <td>Senior audience, Medicare/Social Security, broadcast TV reach</td>
+        </tr>
+      </table>
+
+      <h3 id="workforce">Workforce Density (LODES 2023)</h3>
+      <p>Job counts by workplace location, aggregated from Census block to tract level. These fields show <strong>where people work</strong>, not where they live — useful for physical advertising placement and understanding daytime population.</p>
+
+      <div class="callout amber">
+        <div class="callout-label">Important</div>
+        <p>LODES data is <strong>tract-level only</strong>. Buttons dim when the PUMA layer is active. Switch to Tract to use workforce fields.</p>
+      </div>
+
+      <table>
+        <tr><th>Button</th><th>Field</th><th>Strategic use</th></tr>
+        <tr><td>ALL JOBS</td><td><code>lodes_total_jobs</code></td><td>Overall job density — where are employment centers?</td></tr>
+        <tr><td>JOBS/RESIDENT</td><td><code>lodes_jobs_per_resident</code></td><td>Job-rich vs. bedroom-community tracts</td></tr>
+        <tr><td>HIGH WAGE %</td><td><code>lodes_pct_high_wage</code></td><td>High-income workplace geography (>$3,333/mo workers)</td></tr>
+        <tr><td>LOW WAGE %</td><td><code>lodes_pct_low_wage</code></td><td>Service worker concentration (<$1,250/mo)</td></tr>
+        <tr><td>COLLEGE WORKERS %</td><td><code>lodes_pct_workers_ba</code></td><td>Knowledge-worker workplace density</td></tr>
+        <tr><td>HEALTH CARE</td><td><code>lodes_jobs_health</code></td><td>Hospital/clinic districts — captive commute audience</td></tr>
+        <tr><td>PROFESSIONAL</td><td><code>lodes_jobs_professional</code></td><td>Law, consulting, tech workplace geography</td></tr>
+        <tr><td>RETAIL / FOOD SERVICE</td><td><code>lodes_jobs_retail/food</code></td><td>Foot-traffic areas for place-based advertising</td></tr>
+        <tr><td>FINANCE</td><td><code>lodes_jobs_finance</code></td><td>Banking/insurance worker concentration</td></tr>
+      </table>
+
+      <h3 id="filters">Audience Filters</h3>
+
+      <p><strong>Minimum Population</strong> — set a minimum resident count to exclude low-population rural tracts that skew percentile analysis. Recommended: 1,500–2,000 for statewide work.</p>
+
+      <p><strong>Percentile Filters</strong> — filter tracts to BOTTOM X% or TOP X% on any field. All filters combine with AND logic.</p>
+
+      <p><strong>Minimum Count Filters</strong> — filter by raw count minimums (e.g. Hispanic population AT LEAST 500). Essential for ensuring "high share" filters represent real audience volume.</p>
+
+      <div class="callout green">
+        <div class="callout-label">Best Practice</div>
+        <p>Combine share filters (percentile) with count filters to define a well-scoped audience: <em>Hispanic TOP 30%</em> AND <em>Hispanic AT LEAST 300 people</em> = high-concentration tracts with meaningful population.</p>
+      </div>
+
+      <h3 id="reach">Audience Reach Panel</h3>
+      <p>Click <strong>REACH ↗</strong> in the Layer Stats panel to open the Audience Reach panel. It calculates total audience size across all filtered tracts: population, registered voters, 2024 turnout, Hispanic count, college-educated count, Spanish-speaking households, WFH count, and housing tenure.</p>
+
+      <ul class="step-list">
+        <li><span class="step-num">1</span>Set geographic scope (county or district overlay)</li>
+        <li><span class="step-num">2</span>Apply demographic filters until you have a targeted profile</li>
+        <li><span class="step-num">3</span>Open Reach panel to see total addressable audience size</li>
+        <li><span class="step-num">4</span>Adjust filters if universe is too broad or too narrow</li>
+        <li><span class="step-num">5</span>Export the filtered data for use in targeting platforms</li>
+      </ul>
+
+      <!-- ═══════════════════════════════════════════════ SECTION 03 -->
+      <h2 id="election"><span class="num">03</span> Election Results (2020–2024)</h2>
+
+      <p>Toggle <strong>SHOW VTD LAYER</strong> to render 9,712 precinct-level Voting Tabulation Districts colored by Trump vs. Harris 2024 margin by default. Select any display field from the search or use the Quick Select buttons.</p>
+
+      <table>
+        <tr><th>Field group</th><th>Key fields</th></tr>
+        <tr><td>Swing &amp; Trends</td><td>Pres Swing 2020→2024, Senate Swing, Gov→Pres Swing, Turnout Change, Latino Turnout Change, Reg. Growth</td></tr>
+        <tr><td>Presidential 2024</td><td>Trump/Harris %, R−D Margin, vote totals</td></tr>
+        <tr><td>Presidential 2020</td><td>Trump/Biden %, margin (baseline for swing)</td></tr>
+        <tr><td>Senate 2024/2020</td><td>Cruz/Allred, Cornyn/Hegar %, margins</td></tr>
+        <tr><td>Governor 2022</td><td>Abbott/O'Rourke %, margin (midterm baseline)</td></tr>
+        <tr><td>Turnout 2024/2022/2020</td><td>Turnout %, registered voters, Spanish surname data</td></tr>
+      </table>
+
+      <h3 id="swing">Swing Field Interpretation</h3>
+      <p><strong>Positive swing value</strong> = R gained ground. <strong>Negative value</strong> = D gained ground. The election layer respects all active geographic and demographic filters.</p>
+
+      <table>
+        <tr><th>Swing field</th><th>What it reveals</th></tr>
+        <tr><td><code>pres_swing_24v20</code></td><td>Where did Trump gain or lose vs. 2020? Key momentum indicator.</td></tr>
+        <tr><td><code>gov_pres_22v24</code></td><td>Where did Trump over/underperform Abbott? Reveals ticket-splitters and soft R voters.</td></tr>
+        <tr><td><code>ss_turnout_swing_24v20</code></td><td>Latino turnout trend — rising or declining? Critical for mobilization planning.</td></tr>
+        <tr><td><code>reg_change_24v20</code></td><td>Where is the electorate growing? New registrants = softer partisan identity.</td></tr>
+        <tr><td><code>turnout_swing_24v20</code></td><td>Is overall engagement rising or falling in this precinct?</td></tr>
+      </table>
+
+      <!-- ═══════════════════════════════════════════════ SECTION 04 -->
+      <h2 id="profile"><span class="num">04</span> Feature Profile</h2>
+      <p>Click any census tract, PUMA, political district boundary, or VTD on the map to open a full profile in the sidebar. The profile shows all 30 marketing fields with percentage-of-total annotations where applicable, expandable to all 150+ raw fields.</p>
+
+      <!-- ═══════════════════════════════════════════════ WORKFLOWS -->
+      <h2 id="workflows"><span class="num">—</span> Strategic Workflows</h2>
+
+      <h3 id="persuasion">Finding Persuadable Audiences</h3>
+      <ul class="step-list">
+        <li><span class="step-num">1</span>Set Census Layer to <strong>Tract</strong></li>
+        <li><span class="step-num">2</span>Enable <strong>SHOW VTD LAYER</strong> → select <strong>R−D Margin (Pres 2024)</strong></li>
+        <li><span class="step-num">3</span>Select <strong>Median Household Income</strong> as Display Variable</li>
+        <li><span class="step-num">4</span>Look for middle-income tracts (mid-color) overlapping light-colored VTDs (low margin)</li>
+        <li><span class="step-num">5</span>Open Reach panel to size the universe</li>
+      </ul>
+
+      <h3 id="latino">Latino Audience Strategy</h3>
+      <p><strong>Mobilization targets:</strong> Enable VTD layer → select <em>SS Turnout Change 2020→2024</em>. Blue VTDs = declining Latino turnout. Cross-reference with <em>Hispanic %</em> display variable. Dark census + blue VTD = high-priority mobilization geography.</p>
+      <p><strong>Persuasion targets:</strong> Add percentile filter <em>hispanic → TOP 30%</em>. Look for VTDs with margins under 20 points.</p>
+
+      <h3 id="districts">District-Level Strategy</h3>
+      <ul class="step-list">
+        <li><span class="step-num">1</span>Enable <strong>US CONGRESS</strong> overlay → search for target district</li>
+        <li><span class="step-num">2</span>Map zooms; census and VTD layers filter to the district</li>
+        <li><span class="step-num">3</span>Click district boundary → full population-weighted profile in Section 04</li>
+        <li><span class="step-num">4</span>Click <strong>▶ COLOR BY DISPLAY VARIABLE</strong> to compare all 38 districts at once</li>
+      </ul>
+
+      <h3 id="swing-wf">Swing Analysis Workflow</h3>
+      <ul class="step-list">
+        <li><span class="step-num">1</span>Set county or district scope</li>
+        <li><span class="step-num">2</span>Enable VTD layer → select <strong>Pres Swing R 2020→2024</strong></li>
+        <li><span class="step-num">3</span>Red = R momentum, Blue = D momentum</li>
+        <li><span class="step-num">4</span>Switch to <strong>Gov→Pres Swing 2022→2024</strong> — where did Trump underperform Abbott? These precincts contain ticket-splitters.</li>
+        <li><span class="step-num">5</span>Cross-reference with census demographics to identify <em>who</em> is driving the swing</li>
+      </ul>
+
+      <h3 id="media">Media Channel Planning</h3>
+      <table>
+        <tr><th>Channel</th><th>Filter combination</th></tr>
+        <tr><td>Digital / Social</td><td><code>transport_wfh</code> TOP 25% + <code>edu_bachelors</code> TOP 40%</td></tr>
+        <tr><td>Drive-time Radio</td><td><code>transport_car_alone</code> TOP 40% + <code>median_age</code> 35–55</td></tr>
+        <tr><td>Broadcast TV</td><td><code>median_age</code> TOP 30% + <code>owner_occupied</code> TOP 40%</td></tr>
+        <tr><td>Workplace Advertising</td><td>LODES: <code>lodes_total_jobs</code> high + specific sector filter</td></tr>
+        <tr><td>Direct Mail</td><td><code>median_hh_income</code> BOTTOM 30% + <code>transport_wfh</code> BOTTOM 50%</td></tr>
+      </table>
+
+      <!-- ═══════════════════════════════════════════════ FIELD REFERENCE -->
+      <h2 id="fieldref"><span class="num">—</span> Field Reference</h2>
+
+      <table>
+        <tr><th>Category</th><th>Key fields</th><th>Notes</th></tr>
+        <tr><td>Income</td><td><code>median_hh_income</code>, <code>per_capita_income</code></td><td>Most-used benchmarks</td></tr>
+        <tr><td>Poverty</td><td><code>poverty_below</code></td><td>Shown with % of poverty_total</td></tr>
+        <tr><td>Housing</td><td><code>owner_occupied</code>, <code>renter_occupied</code></td><td>% of occupied_units_total</td></tr>
+        <tr><td>Age</td><td><code>median_age</code>, <code>total_population</code></td><td></td></tr>
+        <tr><td>Race/Ethnicity</td><td><code>hispanic</code>, <code>race_white</code>, <code>race_black</code>, <code>race_asian</code></td><td>With % of respective totals</td></tr>
+        <tr><td>Education</td><td><code>edu_bachelors</code>, <code>edu_masters</code>, <code>edu_professional</code>, <code>edu_doctorate</code></td><td>% of edu_total</td></tr>
+        <tr><td>Employment</td><td><code>employed</code>, <code>unemployed</code></td><td>% of employment_total</td></tr>
+        <tr><td>Occupation</td><td><code>occ_mgmt_business</code>, <code>occ_service</code>, <code>occ_production</code></td><td>% of occupation_total</td></tr>
+        <tr><td>Transport</td><td><code>transport_car_alone</code>, <code>transport_wfh</code>, <code>transport_public_transit</code></td><td>% of transport_total</td></tr>
+        <tr><td>Language</td><td><code>lang_spanish</code>, <code>lang_english_only</code></td><td>% of lang_total</td></tr>
+      </table>
+
+      <h3 id="lodes">LODES Workforce Fields (2023)</h3>
+      <p>All fields prefixed <code>lodes_</code>. Available on Tract layer only. Source: Census Bureau LEHD Origin-Destination Employment Statistics, Workplace Area Characteristics.</p>
+      <table>
+        <tr><th>Field</th><th>Description</th></tr>
+        <tr><td><code>lodes_total_jobs</code></td><td>All jobs at workplaces in this tract</td></tr>
+        <tr><td><code>lodes_jobs_per_resident</code></td><td>Jobs divided by resident population — job density ratio</td></tr>
+        <tr><td><code>lodes_pct_high_wage</code></td><td>% of jobs paying > $3,333/month</td></tr>
+        <tr><td><code>lodes_pct_low_wage</code></td><td>% of jobs paying < $1,250/month</td></tr>
+        <tr><td><code>lodes_pct_workers_ba</code></td><td>% of workers with bachelor's degree or higher</td></tr>
+        <tr><td><code>lodes_jobs_health</code></td><td>Health care & social assistance jobs</td></tr>
+        <tr><td><code>lodes_jobs_professional</code></td><td>Professional, scientific & technical services jobs</td></tr>
+        <tr><td><code>lodes_jobs_retail</code></td><td>Retail trade jobs</td></tr>
+        <tr><td><code>lodes_jobs_food</code></td><td>Food service & accommodation jobs</td></tr>
+        <tr><td><code>lodes_jobs_finance</code></td><td>Finance & insurance jobs</td></tr>
+        <tr><td><code>lodes_jobs_educ</code></td><td>Educational services jobs</td></tr>
+        <tr><td><code>lodes_jobs_govt</code></td><td>Public administration jobs</td></tr>
+        <tr><td><code>lodes_jobs_manufacturing</code></td><td>Manufacturing jobs</td></tr>
+        <tr><td><code>lodes_workers_no_hs</code></td><td>Workers without high school diploma</td></tr>
+        <tr><td><code>lodes_workers_bachelors</code></td><td>Workers with bachelor's degree or higher</td></tr>
+      </table>
+
+      <h2 id="summarybar"><span class="num">—</span> Active State Summary Bar</h2>
+      <p>A thin strip below the title bar shows all currently active dashboard state at a glance.</p>
+      <table>
+        <tr><th>Chip</th><th>Color</th><th>Meaning</th></tr>
+        <tr><td>Geography scope</td><td><span class="field-pill blue">BLUE</span></td><td>Active county or district selection</td></tr>
+        <tr><td>Display variable</td><td><span class="field-pill amber">AMBER</span></td><td>Active choropleth field name</td></tr>
+        <tr><td>Filter count</td><td><span class="field-pill green">GREEN</span></td><td>Combined percentile + count filter total</td></tr>
+        <tr><td>Feature count</td><td><span class="field-pill">GRAY</span></td><td>Tracts shown / total available</td></tr>
+      </table>
+      <p><strong>RESET ALL</strong> clears geography scope, display variable, all filters, and minimum population in one click — restoring the full statewide view.</p>
+
+      <h2 id="startup"><span class="num">—</span> Startup Loading Screen</h2>
+      <p>On first launch and after every server restart, a full-screen card displays while all data loads into memory. This takes 2–4 minutes and happens once per server session.</p>
+      <table>
+        <tr><th>Element</th><th>Description</th></tr>
+        <tr><td>Progress bar</td><td>Smooth fill from 0–100% as each step completes</td></tr>
+        <tr><td>Percentage</td><td>Exact completion (e.g. 63%)</td></tr>
+        <tr><td>Step list</td><td>17 steps with live status: · pending, ▶ running (pulsing blue), ✓ done, ✗ error</td></tr>
+        <tr><td>Step notes</td><td>Completion details per step, e.g. "6,892/6,900 matched, 5 indices"</td></tr>
+      </table>
+
+      <!-- ═══════════════════════════════════════════════ QUICK REFERENCE -->
+      <h2 id="quickref"><span class="num">—</span> Quick Reference</h2>
+
+      <table class="qref">
+        <tr><th>Strategic question</th><th>Dashboard workflow</th></tr>
+        <tr><td>Where are persuadable moderate-income voters?</td><td>Tract choropleth: per capita income + VTD: R−D Margin 2024</td></tr>
+        <tr><td>Where did the electorate swing most?</td><td>VTD: Pres Swing R 2020→2024</td></tr>
+        <tr><td>Where is Latino turnout declining?</td><td>VTD: SS Turnout Change 2020→2024 + census: Hispanic %</td></tr>
+        <tr><td>Where are ticket-splitters?</td><td>VTD: Gov→Pres Swing 2022→2024 (where Trump underperformed Abbott)</td></tr>
+        <tr><td>What does a target district look like?</td><td>Political overlay → select district → click boundary for profile</td></tr>
+        <tr><td>Where are employment centers?</td><td>LODES: lodes_total_jobs or lodes_jobs_per_resident</td></tr>
+        <tr><td>What's the total reach of my filtered universe?</td><td>Apply filters → open Reach panel (REACH ↗ in stats panel)</td></tr>
+        <tr><td>Where should radio ads run?</td><td>transport_car_alone TOP 40% + median_age TOP 30%</td></tr>
+        <tr><td>Where is WFH / digital audience?</td><td>transport_wfh TOP 25% + edu_bachelors TOP 40%</td></tr>
+        <tr><td>Where is the electorate growing?</td><td>VTD: Registration Change 2020→2024</td></tr>
+        <tr><td>What is currently active on the map?</td><td>Check the summary bar below the title bar</td></tr>
+        <tr><td>Reset everything to statewide view?</td><td>Click RESET ALL in the summary bar</td></tr>
+        <tr><td>Find a specific field quickly?</td><td>Type in the Display Variable search — searches all 150+ fields live</td></tr>
+        <tr><td>Save frequently-used fields?</td><td>Click ★ on any field → access from ★ PINNED tab</td></tr>
+        <tr><td>Filter to middle 50% (exclude outliers)?</td><td>Percentile filter search → slider: set low=25, high=75 → ADD FILTER</td></tr>
+        <tr><td>Browse fields by topic area?</td><td>Switch to CATEGORY view in the field browser</td></tr>
+      </table>
+
+      <div class="footer">Serendipity Research — Demographic Dashboard v2026.5.0</div>
+
+    </main>
+  </div>
+
+  <script>
+    // Active TOC highlighting on scroll
+    const sections = document.querySelectorAll('[id]');
+    const tocLinks = document.querySelectorAll('.toc-item');
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(link => {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + entry.target.id);
+          });
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    sections.forEach(s => observer.observe(s));
+  </script>
+
+</body>
+</html>
