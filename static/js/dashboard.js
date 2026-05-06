@@ -530,6 +530,14 @@ async function loadAndRenderLayer() {
     updateLayerStats(geojson);
     hideMapLoading();
 
+    // Auto-zoom to filtered tract bounds when scoped to county/district
+    if ((State.county || State.overlaySelection) && geoLayer && geojson.features?.length > 0) {
+      try {
+        const bounds = geoLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, {padding: [40, 40], maxZoom: 13});
+      } catch(e) {}
+    }
+
     // Re-disable census pointer events if election layer is active
     if (electionVisible && geoLayer) {
       geoLayer.eachLayer(l => { if (l._path) l._path.style.pointerEvents = "none"; });
@@ -580,8 +588,8 @@ async function renderGeoJSON(geojson) {
   geoLayer = L.geoJSON(geojson, {
     style: (feature) => {
       const props = feature.properties;
-      let fillColor = "#1a1a1a";
-      let fillOpacity = 0.5;
+      let fillColor = "#1e3a5a";   // visible blue-gray default instead of near-black
+      let fillOpacity = 0.55;
 
       if (pctField && props[pctField] !== null && props[pctField] !== undefined) {
         const t = props[pctField] / 100;
@@ -592,7 +600,7 @@ async function renderGeoJSON(geojson) {
       return {
         fillColor,
         fillOpacity,
-        color: "#2a2a2a",
+        color: "#3a5a7a",
         weight: 0.5,
         opacity: 0.8,
       };
@@ -822,9 +830,9 @@ function initFilterSearch(meta) {
 
     dropdown.querySelectorAll(".dropdown-item").forEach(el => {
       el.addEventListener("click", () => {
-        addFilter(el.dataset.field, el.dataset.label);
         input.value = "";
         dropdown.classList.add("hidden");
+        openPctSlider(el.dataset.field, el.dataset.label);
       });
     });
   });
@@ -2218,7 +2226,8 @@ function openPctSlider(field, label) {
   document.getElementById("pct-range-high").value = 100;
   updateSliderUI();
   wrap.classList.remove("hidden");
-  wrap.scrollIntoView({behavior:"smooth", block:"nearest"});
+  // Scroll into view after a brief delay to ensure it's visible
+  setTimeout(() => wrap.scrollIntoView({behavior: "smooth", block: "nearest"}), 50);
 }
 
 function updateSliderUI() {
@@ -2324,30 +2333,6 @@ document.querySelectorAll(".fvt-btn").forEach(btn => {
     setFieldView(btn.dataset.view);
   });
 });
-
-// ─── Wire filter field dropdown to open slider ────────────────────────────────
-// Override the dropdown item click to open slider instead of directly adding filter
-const _origInitFilter = initFilterSearch;
-initFilterSearch = function(meta) {
-  _origInitFilter(meta);
-  // Re-wire the filter dropdown to open the slider
-  const dropdown = document.getElementById("filter-field-dropdown");
-  if (!dropdown) return;
-  const observer = new MutationObserver(() => {
-    dropdown.querySelectorAll(".dropdown-item[data-field]:not([data-slider-wired])").forEach(item => {
-      item.dataset.sliderWired = "1";
-      item.addEventListener("click", e => {
-        e.stopPropagation();
-        const field = item.dataset.field;
-        const label = item.dataset.label || field;
-        document.getElementById("filter-field-search").value = "";
-        dropdown.classList.add("hidden");
-        openPctSlider(field, label);
-      }, true); // capture phase to fire before the original
-    });
-  });
-  observer.observe(dropdown, {childList: true});
-};
 
 // ─── Hook updateSummaryBar into layer renders ─────────────────────────────────
 const _origUpdateLayerStats = updateLayerStats;
